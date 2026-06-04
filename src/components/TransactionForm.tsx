@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { CATEGORIES, DEFAULT_ACCOUNTS } from '../types'
 import type { Transaction, TransactionType } from '../types'
-import { X } from 'lucide-react'
+import { X, Zap, ArrowRight } from 'lucide-react'
+import { parseSmartInput } from '../utils/smartInput'
 
 interface TransactionFormProps {
   onSubmit: (data: Omit<Transaction, 'id'>) => void
@@ -62,6 +63,16 @@ export default function TransactionForm({ onSubmit, onClose, editData }: Transac
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <SmartInputSection
+            onFill={(fields) => {
+              if (fields.description !== undefined) setDescription(fields.description)
+              if (fields.value !== undefined) setValue(fields.value.toString())
+              if (fields.type !== undefined) handleTypeChange(fields.type)
+              if (fields.category !== undefined) setCategory(fields.category)
+              if (fields.account !== undefined) setAccount(fields.account)
+              if (fields.date !== undefined) setDate(fields.date)
+            }}
+          />
           <div className="flex gap-2">
             {(['expense', 'income', 'investment'] as const).map((t) => (
               <button
@@ -160,6 +171,83 @@ export default function TransactionForm({ onSubmit, onClose, editData }: Transac
           </button>
         </form>
       </div>
+    </div>
+  )
+}
+
+interface SmartInputSectionProps {
+  onFill: (fields: {
+    description?: string
+    value?: number
+    type?: TransactionType
+    category?: string
+    account?: string
+    date?: string
+  }) => void
+}
+
+function SmartInputSection({ onFill }: SmartInputSectionProps) {
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState('')
+
+  function handleParse() {
+    const result = parseSmartInput(text)
+    onFill({
+      description: result.description || undefined,
+      value: result.value ?? undefined,
+      type: result.type,
+      category: result.category ?? undefined,
+      account: result.accountId ?? undefined,
+    })
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      handleParse()
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900/30">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center gap-2 px-4 py-2.5 text-xs font-medium text-zinc-500 transition-colors hover:text-zinc-300"
+      >
+        <Zap className={`h-3.5 w-3.5 transition-colors ${open ? 'text-emerald-400' : ''}`} />
+        Digitação rápida
+        <span className="ml-auto text-zinc-600">{open ? '▲' : '▼'}</span>
+      </button>
+
+      {open && (
+        <div className="space-y-2 border-t border-zinc-800 px-4 pb-3 pt-3">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder='Ex: mercado 50 despesa alimentação nubank'
+              className="flex-1 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 outline-none transition-all focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20"
+            />
+            <button
+              type="button"
+              onClick={handleParse}
+              disabled={!text.trim()}
+              className="flex items-center gap-1 rounded-lg bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-400 transition-all hover:bg-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <p className="text-[11px] text-zinc-600 leading-relaxed">
+            Digite <span className="text-zinc-500">descrição valor</span> e opcionalmente{' '}
+            <span className="text-zinc-500">tipo</span>,{' '}
+            <span className="text-zinc-500">categoria</span> e{' '}
+            <span className="text-zinc-500">conta</span>. Ex: <em className="text-zinc-400">aluguel 1200 despesa moradia</em>
+          </p>
+        </div>
+      )}
     </div>
   )
 }
