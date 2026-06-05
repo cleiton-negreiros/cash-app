@@ -1,29 +1,40 @@
-import { useCallback } from 'react'
-import { useLocalStorage } from './useLocalStorage'
+import { useState, useCallback, useEffect } from 'react'
+import { useAuth } from '../contexts/AuthContext'
 import type { Transaction } from '../types'
 import { getMonth, getYear } from '../utils/format'
-
-function generateId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2)
-}
+import * as dataService from '../services/dataService'
 
 export function useTransactions() {
-  const [transactions, setTransactions] = useLocalStorage<Transaction[]>('transactions', [])
+  const { user } = useAuth()
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const addTransaction = useCallback((data: Omit<Transaction, 'id'>) => {
-    const transaction: Transaction = { ...data, id: generateId() }
-    setTransactions((prev) => [transaction, ...prev])
-  }, [setTransactions])
+  const userId = user?.id ?? 'local'
 
-  const deleteTransaction = useCallback((id: string) => {
+  useEffect(() => {
+    dataService.getTransactions(userId).then((data) => {
+      setTransactions(data)
+      setLoading(false)
+    })
+  }, [userId])
+
+  const addTransaction = useCallback(async (data: Omit<Transaction, 'id'>) => {
+    const saved = await dataService.saveTransaction(userId, data)
+    setTransactions((prev) => [saved, ...prev])
+    return saved
+  }, [userId])
+
+  const deleteTransaction = useCallback(async (id: string) => {
+    await dataService.removeTransaction(userId, id)
     setTransactions((prev) => prev.filter((t) => t.id !== id))
-  }, [setTransactions])
+  }, [userId])
 
-  const editTransaction = useCallback((id: string, data: Omit<Transaction, 'id'>) => {
+  const editTransaction = useCallback(async (id: string, data: Omit<Transaction, 'id'>) => {
+    await dataService.updateTransactionData(userId, id, data)
     setTransactions((prev) =>
       prev.map((t) => (t.id === id ? { ...data, id } : t))
     )
-  }, [setTransactions])
+  }, [userId])
 
   const getTransactionsByMonth = useCallback((month: number, year: number) => {
     return transactions.filter((t) => getMonth(t.date) === month && getYear(t.date) === year)
@@ -47,7 +58,7 @@ export function useTransactions() {
 
   return {
     transactions,
-    setTransactions,
+    loading,
     addTransaction,
     deleteTransaction,
     editTransaction,

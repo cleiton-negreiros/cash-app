@@ -4,6 +4,7 @@ import { formatCurrency } from '../utils/format'
 import AccountCard from './AccountCard'
 import CategoryPieChart from './CategoryPieChart'
 import MonthlyBarChart from './MonthlyBarChart'
+import BudgetPanel from './BudgetPanel'
 
 interface DashboardProps {
   totals: {
@@ -16,6 +17,7 @@ interface DashboardProps {
   transactions: Transaction[]
   currentYear: number
   currentMonthLabel: string
+  currentMonth: number
 }
 
 export default function Dashboard({
@@ -24,6 +26,7 @@ export default function Dashboard({
   transactions,
   currentYear,
   currentMonthLabel,
+  currentMonth,
 }: DashboardProps) {
   const stats = [
     {
@@ -81,6 +84,8 @@ export default function Dashboard({
           </div>
         ))}
       </div>
+
+      <BudgetPanel month={currentMonth} year={currentYear} />
 
       <div>
         <h3 className="mb-3 text-sm font-semibold text-zinc-300">Contas</h3>

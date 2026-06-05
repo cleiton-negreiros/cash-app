@@ -17,6 +17,31 @@ export interface Account {
   color: string
 }
 
+export type RecurringFrequency = 'weekly' | 'biweekly' | 'monthly' | 'yearly'
+
+export interface RecurringTransaction {
+  id: string
+  description: string
+  value: number
+  type: TransactionType
+  category: string
+  account: string
+  frequency: RecurringFrequency
+  day: number
+  nextDate: string
+  active: boolean
+}
+
+export interface Budget {
+  id: string
+  category: string
+  type: 'expense' | 'investment'
+  limitAmount: number
+  spent: number
+  month: number
+  year: number
+}
+
 export const CATEGORIES = {
   income: [
     'Salário',
@@ -61,3 +86,10 @@ export const MONTHS = [
   'Maio', 'Junho', 'Julho', 'Agosto',
   'Setembro', 'Outubro', 'Novembro', 'Dezembro',
 ]
+
+export const FREQUENCY_LABELS: Record<RecurringFrequency, string> = {
+  weekly: 'Semanal',
+  biweekly: 'Quinzenal',
+  monthly: 'Mensal',
+  yearly: 'Anual',
+}

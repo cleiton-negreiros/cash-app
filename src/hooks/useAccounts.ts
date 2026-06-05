@@ -1,10 +1,24 @@
-import { useMemo } from 'react'
-import { useLocalStorage } from './useLocalStorage'
+import { useState, useMemo, useEffect } from 'react'
+import { useAuth } from '../contexts/AuthContext'
 import type { Account, Transaction } from '../types'
 import { DEFAULT_ACCOUNTS } from '../types'
+import * as dataService from '../services/dataService'
 
 export function useAccounts(transactions: Transaction[], currentMonth: number, currentYear: number) {
-  const [accounts, setAccounts] = useLocalStorage<Account[]>('accounts', DEFAULT_ACCOUNTS)
+  const { user } = useAuth()
+  const [accounts, setAccounts] = useState<Account[]>(DEFAULT_ACCOUNTS)
+  const [loading, setLoading] = useState(true)
+
+  const userId = user?.id ?? 'local'
+
+  useEffect(() => {
+    dataService.getAccounts(userId).then(({ accounts: data }) => {
+      if (data.length > 0) {
+        setAccounts(data as Account[])
+      }
+      setLoading(false)
+    })
+  }, [userId])
 
   const accountsWithBalance = useMemo(() => {
     const filtered = transactions.filter((t) => {
@@ -25,5 +39,5 @@ export function useAccounts(transactions: Transaction[], currentMonth: number, c
     })
   }, [accounts, transactions, currentMonth, currentYear])
 
-  return { accounts: accountsWithBalance, setAccounts }
+  return { accounts: accountsWithBalance, loading, setAccounts }
 }

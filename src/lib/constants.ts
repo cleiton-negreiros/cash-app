@@ -1,0 +1,5 @@
+export const APP_NAME = 'CashApp'
+export const PIX_KEY = 'cleitonnegreirosdev@gmail.com'
+export const PIX_NAME = 'Cleiton Negreiros'
+export const DONATION_URL = 'https://link.mercadopago.com.br/cleitonnegreiros'
+export const TELEGRAM_BOT_USERNAME = 'cashapp_finance_bot'
