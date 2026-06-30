@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
-import { parseSmartInput, CATEGORIES_LIST } from '../lib/smartInput.js'
+import { parseSmartInput } from '../lib/smartInput.js'
 
 const TELEGRAM_API = 'https://api.telegram.org/bot'
 
@@ -64,7 +64,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const telegramId = req.body?.message?.from?.id
     const username = req.body?.message?.from?.username
     const text = req.body?.message?.text || ''
-    const messageId = req.body?.message?.message_id
 
     if (!chatId) return res.status(200).json({ ok: true })
 
