@@ -44,58 +44,123 @@ function parseOFX(content: string): { description: string; value: number; date: 
   return transactions
 }
 
+function parseValue(raw: string): number | null {
+  let cleaned = raw.replace(/[R$\s]/g, '').trim()
+  if (!cleaned) return null
+
+  const negative = cleaned.startsWith('-')
+  cleaned = cleaned.replace(/^[-+]/, '')
+
+  const hasDot = cleaned.includes('.')
+  const hasComma = cleaned.includes(',')
+
+  let normalized: string
+  if (hasDot && hasComma) {
+    normalized = cleaned.replace(/\./g, '').replace(',', '.')
+  } else if (hasComma && !hasDot) {
+    normalized = cleaned.replace(',', '.')
+  } else if (hasDot) {
+    const parts = cleaned.split('.')
+    if (parts.length === 2 && parts[1].length <= 2) {
+      normalized = cleaned
+    } else {
+      normalized = cleaned.replace(/\./g, '')
+    }
+  } else {
+    normalized = cleaned
+  }
+
+  const value = parseFloat(normalized)
+  if (isNaN(value) || value <= 0) return null
+  return negative ? -value : value
+}
+
+function findColumnIndex(columns: string[], matchers: ((col: string) => boolean)[]): number {
+  for (const match of matchers) {
+    const idx = columns.findIndex(match)
+    if (idx >= 0) return idx
+  }
+  return -1
+}
+
+function hasAll(col: string, keywords: string[]): boolean {
+  return keywords.every((kw) => col.includes(kw))
+}
+
+function hasAny(col: string, keywords: string[]): boolean {
+  return keywords.some((kw) => col.includes(kw))
+}
+
+function parseDate(dateStr: string): string {
+  if (!dateStr) return ''
+  if (dateStr.includes('/')) {
+    const parts = dateStr.split('/')
+    if (parts.length === 3) {
+      let year = parts[2]
+      if (year.length === 2) year = '20' + year
+      return `${year}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
+    }
+  }
+  if (dateStr.includes('-') && dateStr.length === 10) {
+    return dateStr
+  }
+  return dateStr
+}
+
 function parseCSV(content: string): { description: string; value: number; date: string; type: string }[] {
   const transactions: { description: string; value: number; date: string; type: string }[] = []
   const lines = content.split('\n').filter((l) => l.trim())
+  if (lines.length < 2) return transactions
 
-  const header = lines[0].toLowerCase()
-  const dateIdx = header.includes('data') ? 0 : -1
-  const descIdx = header.includes('descricao') || header.includes('descrição') || header.includes('historico') ? 1 : -1
-  const valueIdx = header.includes('valor') ? 2 : -1
+  const header = lines[0]
+  const semicolons = (header.match(/;/g) || []).length
+  const commas = (header.match(/,/g) || []).length
+  const delim = semicolons >= commas ? ';' : ','
 
-  if (dateIdx === -1 || descIdx === -1 || valueIdx === -1) {
-    for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(';').map((c) => c.trim().replace(/^"|"$/g, ''))
-      if (cols.length < 3) continue
+  const headerCols = header.toLowerCase().split(delim).map((c) => c.trim().replace(/^"|"$/g, ''))
 
-      const dateStr = cols[0]
-      const desc = cols[1]
-      const rawValue = cols[2].replace('R$', '').replace(/\./g, '').replace(',', '.').trim()
-      const value = Math.abs(parseFloat(rawValue))
-      const type = rawValue.startsWith('-') ? 'expense' : 'income'
-
-      let date = dateStr
-      if (dateStr.includes('/')) {
-        const parts = dateStr.split('/')
-        date = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
-      }
-
-      if (desc && value > 0) {
-        transactions.push({ description: desc, value, date, type })
-      }
-    }
-    return transactions
-  }
+  const dateIdx = findColumnIndex(headerCols, [
+    (c) => hasAny(c, ['data']),
+  ])
+  const descIdx = findColumnIndex(headerCols, [
+    (c) => hasAny(c, ['descricao', 'descrição', 'descri']),
+    (c) => hasAny(c, ['historico', 'nome']),
+  ])
+  const valueIdx = findColumnIndex(headerCols, [
+    (c) => hasAny(c, ['r$', 'brl']) && hasAny(c, ['valor']),
+    (c) => hasAny(c, ['valor', 'amount', 'montante']),
+  ])
+  const typeIdx = findColumnIndex(headerCols, ['tipo', 'natureza'])
 
   for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(',').map((c) => c.trim().replace(/^"|"$/g, ''))
-    if (cols.length <= Math.max(dateIdx, descIdx, valueIdx)) continue
+    const row = lines[i].split(delim).map((c) => c.trim().replace(/^"|"$/g, ''))
 
-    const dateStr = cols[dateIdx]
-    const desc = cols[descIdx]
-    const rawValue = cols[valueIdx].replace('R$', '').replace(/\./g, '').replace(',', '.').trim()
-    const value = Math.abs(parseFloat(rawValue))
-    const type = rawValue.startsWith('-') ? 'expense' : 'income'
+    let dateStr: string
+    let desc: string
+    let rawValue: string
 
-    let date = dateStr
-    if (dateStr.includes('/')) {
-      const parts = dateStr.split('/')
-      date = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
+    if (dateIdx >= 0 && descIdx >= 0 && valueIdx >= 0) {
+      dateStr = row[dateIdx]
+      desc = row[descIdx]
+      rawValue = row[valueIdx]
+    } else {
+      continue
     }
 
-    if (desc && value > 0) {
-      transactions.push({ description: desc, value, date, type })
-    }
+    const parsedValue = parseValue(rawValue)
+    if (!parsedValue || !desc) continue
+
+    const isCreditPayment = desc.toLowerCase().includes('pagamento') || desc.toLowerCase().includes('estorno')
+    const type = parsedValue < 0 || isCreditPayment ? 'income' : 'expense'
+
+    const date = parseDate(dateStr)
+
+    transactions.push({
+      description: desc,
+      value: Math.abs(parsedValue),
+      date,
+      type,
+    })
   }
 
   return transactions
