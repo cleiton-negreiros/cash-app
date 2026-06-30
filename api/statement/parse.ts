@@ -25,13 +25,15 @@ function parseOFX(content: string): { description: string; value: number; date: 
       if (m) currentDate = `${m[1]}-${m[2]}-${m[3]}`
     } else if (trimmed.startsWith('<TRNAMT>')) {
       currentValue = Math.abs(parseFloat(trimmed.replace('<TRNAMT>', '').replace('</TRNAMT>', '').trim()))
-    } else if (trimmed.startsWith('</STMTTRN>') && currentDesc) {
-      transactions.push({
-        description: currentDesc,
-        value: currentValue,
-        date: currentDate,
-        type: currentType,
-      })
+    } else if (trimmed.startsWith('</STMTTRN>')) {
+      if (currentValue || currentDate) {
+        transactions.push({
+          description: currentDesc || 'Sem descrição',
+          value: currentValue,
+          date: currentDate,
+          type: currentType,
+        })
+      }
       currentDesc = ''
       currentValue = 0
       currentDate = ''
