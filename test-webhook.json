@@ -1,0 +1,7 @@
+{
+  "message": {
+    "chat": { "id": 123456 },
+    "from": { "id": 999, "username": "test" },
+    "text": "pix 1,50 impressão origem: 99pay"
+  }
+}

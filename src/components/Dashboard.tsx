@@ -1,4 +1,4 @@
-import { TrendingUp, TrendingDown, PiggyBank, Wallet } from 'lucide-react'
+import { TrendingUp, TrendingDown, PiggyBank, Wallet, CreditCard } from 'lucide-react'
 import type { Account, Transaction } from '../types'
 import { formatCurrency } from '../utils/format'
 import AccountCard from './AccountCard'
@@ -18,6 +18,7 @@ interface DashboardProps {
   currentYear: number
   currentMonthLabel: string
   currentMonth: number
+  invoiceTotals?: Record<string, number>
 }
 
 export default function Dashboard({
@@ -27,7 +28,14 @@ export default function Dashboard({
   currentYear,
   currentMonthLabel,
   currentMonth,
+  invoiceTotals,
 }: DashboardProps) {
+  const totalInvoice = Object.values(invoiceTotals ?? {}).reduce((a, b) => a + b, 0)
+  const totalCreditLimit = accounts
+    .filter((a) => a.accountType === 'credit_card')
+    .reduce((s, a) => s + (a.creditLimit ?? 0), 0)
+  const totalAvailable = totalCreditLimit - totalInvoice
+
   const stats = [
     {
       label: 'Saldo Total',
@@ -59,6 +67,16 @@ export default function Dashboard({
     },
   ]
 
+  if (totalCreditLimit > 0) {
+    stats.push({
+      label: 'Fatura Cartão',
+      value: totalInvoice,
+      icon: CreditCard,
+      color: 'text-red-400',
+      bg: 'bg-red-500/10',
+    })
+  }
+
   return (
     <div className="space-y-6">
       <div className="mb-1">
@@ -85,13 +103,36 @@ export default function Dashboard({
         ))}
       </div>
 
+      {totalCreditLimit > 0 && (
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4">
+          <div className="flex items-center justify-between text-sm mb-2">
+            <span className="text-zinc-400">Limite total de crédito</span>
+            <span className="text-zinc-300 font-semibold">{formatCurrency(totalCreditLimit)}</span>
+          </div>
+          <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-red-500 transition-all"
+              style={{ width: `${totalCreditLimit > 0 ? (totalInvoice / totalCreditLimit) * 100 : 0}%` }}
+            />
+          </div>
+          <div className="flex justify-between text-xs mt-1.5">
+            <span className="text-red-400">Usado: {formatCurrency(totalInvoice)}</span>
+            <span className="text-emerald-400">Disponível: {formatCurrency(totalAvailable)}</span>
+          </div>
+        </div>
+      )}
+
       <BudgetPanel month={currentMonth} year={currentYear} />
 
       <div>
         <h3 className="mb-3 text-sm font-semibold text-zinc-300">Contas</h3>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {accounts.map((account) => (
-            <AccountCard key={account.id} account={account} />
+            <AccountCard
+              key={account.id}
+              account={account}
+              invoiceTotal={invoiceTotals?.[account.id]}
+            />
           ))}
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { Wallet, Plus, X, User, Repeat, Target } from 'lucide-react'
+import { Wallet, Plus, X, User, Repeat, Target, CreditCard, Upload } from 'lucide-react'
 
 interface HeaderProps {
   activeTab: string
@@ -11,8 +11,10 @@ interface HeaderProps {
 const tabs = [
   { id: 'dashboard', label: 'Dashboard', icon: null },
   { id: 'transactions', label: 'Transações', icon: null },
+  { id: 'invoice', label: 'Faturas', icon: CreditCard },
   { id: 'recurring', label: 'Recorrentes', icon: Repeat },
   { id: 'budgets', label: 'Orçamentos', icon: Target },
+  { id: 'import', label: 'Importar', icon: Upload },
 ]
 
 export default function Header({ activeTab, setActiveTab, showForm, setShowForm, showProfile = true }: HeaderProps) {

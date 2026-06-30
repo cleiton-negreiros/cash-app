@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
+import { parseSmartInput, CATEGORIES_LIST } from '../lib/smartInput.js'
 
 const TELEGRAM_API = 'https://api.telegram.org/bot'
 
@@ -25,84 +26,37 @@ async function sendTelegram(chatId: number, text: string) {
   } catch (e) {}
 }
 
-const CATEGORIES: any = {
-  expense: ['Alimentação', 'Transporte', 'Moradia', 'Saúde', 'Educação', 'Lazer', 'Assinaturas', 'Compras', 'Outros'],
-  income: ['Salário', 'Freela', 'Investimentos', 'Vendas', 'Outros'],
-  investment: ['Ações', 'FIIs', 'Renda Fixa', 'Cripto', 'Tesouro Direto', 'Outros'],
+async function getUserAccounts(userId: string): Promise<{ id: string; name: string }[]> {
+  const sb = getSupabase()
+  const { data: accounts } = await sb
+    .from('accounts')
+    .select('id, name')
+    .eq('user_id', userId)
+  return (accounts || []).map((a: any) => ({ id: a.id, name: a.name }))
 }
 
-const CATEGORIES_LIST = [
-  'Salário', 'Freela', 'Investimentos', 'Vendas',
-  'Alimentação', 'Transporte', 'Moradia', 'Saúde', 'Educação',
-  'Lazer', 'Assinaturas', 'Compras',
-  'Ações', 'FIIs', 'Renda Fixa', 'Cripto', 'Tesouro Direto',
-]
-
-const ACCOUNTS = [
-  { id: '39115704-05c0-4b65-94a0-3df546846e21', name: 'Outro' },
-  { id: '021ce465-98e7-45cf-8b31-14f86bc89843', name: 'Itaú' },
-  { id: 'd5bae6db-3e20-41cb-a443-387e3a502073', name: 'Mercado Pago' },
-  { id: 'ca0a3cae-618a-4593-a007-8d119ed46b95', name: 'Nubank' },
-  { id: '18ecb47c-5f54-40b3-a522-9ee415f66987', name: 'Rico' },
-  { id: 'd291285e-2491-4aaf-b7ec-f547731fdbbc', name: 'Caixa' },
-]
-
-const TYPE_WORDS: Record<string, string> = {
-  despesa: 'expense', despesas: 'expense', gasto: 'expense', gastos: 'expense',
-  pago: 'expense', saida: 'expense',
-  receita: 'income', receitas: 'income', ganho: 'income', ganhos: 'income',
-  entrada: 'income', salario: 'income',
-  investimento: 'investment', investimentos: 'investment', aplicacao: 'investment',
+function formatTransactionPreview(parsed: ReturnType<typeof parseSmartInput>, accountName: string) {
+  const typeLabel = parsed.type === 'income' ? '💰 Receita' : parsed.type === 'expense' ? '💸 Despesa' : '📈 Investimento'
+  const sign = parsed.type === 'income' ? '+' : '-'
+  return (
+    `*Confirma a transação?* (responda com "sim" ou "s" para confirmar)\n\n` +
+    `${typeLabel}\n` +
+    `📝 ${parsed.description || '(sem descrição)'}\n` +
+    `💵 ${sign} R$ ${Number(parsed.value).toFixed(2).replace('.', ',')}\n` +
+    `🏷 ${parsed.category || 'Outros'}\n` +
+    `🏦 ${accountName}\n` +
+    `📅 ${parsed.date ? new Date(parsed.date + 'T12:00:00').toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR')}`
+  )
 }
 
-function findMatch(token: string, items: string[]): string | null {
-  const t = token.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
-  for (const item of items) {
-    const i = item.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
-    if (i === t) return item
-  }
-  for (const item of items) {
-    const i = item.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
-    if (i.startsWith(t) || t.startsWith(i)) return item
-  }
-  for (const item of items) {
-    const i = item.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
-    if (i.includes(t) || t.includes(i)) return item
-  }
-  return null
-}
-
-function parseInput(input: string) {
-  const tokens = input.trim().split(/\s+/)
-  let value: number | null = null
-  let type = 'expense'
-  let category: string | null = null
-  let accountId: string | null = null
-  const desc: string[] = []
-
-  for (const raw of tokens) {
-    const num = parseFloat(raw.replace(',', '.'))
-    if (!isNaN(num) && num > 0 && value === null) {
-      value = num
-      continue
-    }
-    if (TYPE_WORDS[raw.toLowerCase()]) {
-      type = TYPE_WORDS[raw.toLowerCase()]
-      continue
-    }
-    const cat = findMatch(raw, CATEGORIES_LIST)
-    if (cat) { category = cat; continue }
-    const acc = findMatch(raw, ACCOUNTS.map(a => a.name))
-    if (acc) {
-      const found = ACCOUNTS.find(a => a.name === acc)
-      if (found) accountId = found.id
-      continue
-    }
-    desc.push(raw)
-  }
-
-  return { value, type, category, accountId, description: desc.join(' ') }
-}
+const pendingConfirmations = new Map<number, {
+  userId: string
+  parsed: ReturnType<typeof parseSmartInput>
+  accountId: string
+  accountName: string
+  category: string
+  description: string
+}>()
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
@@ -110,6 +64,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const telegramId = req.body?.message?.from?.id
     const username = req.body?.message?.from?.username
     const text = req.body?.message?.text || ''
+    const messageId = req.body?.message?.message_id
 
     if (!chatId) return res.status(200).json({ ok: true })
 
@@ -130,11 +85,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         `/link CODIGO - Vincular conta\n` +
         `/transacoes - Ver últimas\n` +
         `/resumo - Resumo do mês\n` +
-        `/saldo - Saldo por conta\n\n` +
+        `/saldo - Saldo por conta\n` +
+        `/cancelar - Cancelar transação pendente\n\n` +
         `*Exemplos de transações:*\n` +
-        `• \`mercado 50 despesa alimentacao nubank\`\n` +
-        `• \`salario 5000 receita nubank\`\n` +
-        `• \`tesouro 200 investimento renda fixa\``
+         `• \`mercado 50 despesa alimentacao c6\`\n` +
+         `• \`salario 5000 receita santander\`\n` +
+         `• \`tesouro 200 investimento renda fixa\`\n` +
+         `• \`ifood 35 15/06 c6\` (com data)`
       )
     } else if (text.startsWith('/link')) {
       const code = text.split(' ')[1]
@@ -238,14 +195,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             await sendTelegram(chatId, '📭 Nenhuma transação no mês.')
           } else {
             const fmt = (n: number) => n.toFixed(2).replace('.', ',')
-            const receitas = txs.filter(t => t.type === 'income').reduce((s, t) => s + Number(t.value), 0)
-            const despesas = txs.filter(t => t.type === 'expense').reduce((s, t) => s + Number(t.value), 0)
-            const investimentos = txs.filter(t => t.type === 'investment').reduce((s, t) => s + Number(t.value), 0)
+            const receitas = txs.filter((t: any) => t.type === 'income').reduce((s: number, t: any) => s + Number(t.value), 0)
+            const despesas = txs.filter((t: any) => t.type === 'expense').reduce((s: number, t: any) => s + Number(t.value), 0)
+            const investimentos = txs.filter((t: any) => t.type === 'investment').reduce((s: number, t: any) => s + Number(t.value), 0)
             const saldo = receitas - despesas - investimentos
             const mesNome = now.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
 
             const catMap: Record<string, number> = {}
-            for (const t of txs.filter(t => t.type === 'expense')) {
+            for (const t of txs.filter((t: any) => t.type === 'expense')) {
               catMap[t.category] = (catMap[t.category] || 0) + Number(t.value)
             }
             const topCats = Object.entries(catMap)
@@ -316,8 +273,63 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       } catch (err: any) {
         await sendTelegram(chatId, '❌ Erro ao buscar saldo.')
       }
+    } else if (text === '/cancelar' || text.startsWith('/cancelar')) {
+      if (pendingConfirmations.has(chatId)) {
+        pendingConfirmations.delete(chatId)
+        await sendTelegram(chatId, '❌ Transação cancelada.')
+      } else {
+        await sendTelegram(chatId, 'Nenhuma transação pendente.')
+      }
     } else if (text.startsWith('/')) {
       await sendTelegram(chatId, '❓ Comando não reconhecido. Digite /help.')
+    } else if (text.match(/^(sim|s|confirmar|ok|yes)$/i)) {
+      const pending = pendingConfirmations.get(chatId)
+      if (!pending) {
+        await sendTelegram(chatId, 'Nenhuma transação pendente. Envie uma descrição para começar.')
+      } else {
+        pendingConfirmations.delete(chatId)
+        try {
+          const sb = getSupabase()
+          const { error } = await sb.from('transactions').insert({
+            user_id: pending.userId,
+            account_id: pending.accountId,
+            date: pending.parsed.date || new Date().toISOString().split('T')[0],
+            description: pending.description,
+            value: pending.parsed.value,
+            type: pending.parsed.type,
+            category: pending.category,
+          })
+
+          if (error) {
+            await sendTelegram(chatId, `❌ Erro ao salvar: ${error.message}`)
+          } else {
+            const emoji = pending.parsed.type === 'income' ? '💰' : pending.parsed.type === 'expense' ? '💸' : '📈'
+            const label = pending.parsed.type === 'income' ? 'Receita' : pending.parsed.type === 'expense' ? 'Despesa' : 'Investimento'
+            const sign = pending.parsed.type === 'income' ? '+' : '-'
+
+            let msg =
+              `✅ *Transação salva!*\n\n` +
+              `${emoji} ${label}\n` +
+              `📝 ${pending.description}\n` +
+              `💵 ${sign} R$ ${Number(pending.parsed.value).toFixed(2).replace('.', ',')}\n` +
+              `🏷 ${pending.category}\n` +
+              `🏦 ${pending.accountName}`
+
+            msg += await formatBudgetWarning(sb, pending.userId, pending.category, pending.parsed.type)
+
+            await sendTelegram(chatId, msg)
+          }
+        } catch (err: any) {
+          await sendTelegram(chatId, '❌ Erro ao processar transação.')
+        }
+      }
+    } else if (text.match(/^(nao|não|n|cancelar|cancel)$/i)) {
+      if (pendingConfirmations.has(chatId)) {
+        pendingConfirmations.delete(chatId)
+        await sendTelegram(chatId, '❌ Transação cancelada.')
+      } else {
+        await sendTelegram(chatId, 'Nenhuma transação pendente.')
+      }
     } else {
       try {
         const sb = getSupabase()
@@ -330,43 +342,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!profile) {
           await sendTelegram(chatId, '❌ Conta não vinculada. Use /start para vincular.')
         } else {
-          const parsed = parseInput(text)
+          const parsed = parseSmartInput(text)
 
           if (!parsed.value) {
-            await sendTelegram(chatId, '❌ Não identifiquei um valor.\n\nExemplo: `mercado 50 despesa alimentacao nubank`')
+            await sendTelegram(chatId, '❌ Não identifiquei um valor.\n\nExemplo: `mercado 50 despesa alimentacao c6`\nCom data: `ifood 35 15/06 santander`')
           } else {
-            const account = ACCOUNTS.find(a => a.id === parsed.accountId) || ACCOUNTS[0]
-            const accountId = account.id
-            const accountName = account.name
-            const category = parsed.category || CATEGORIES[parsed.type][CATEGORIES[parsed.type].length - 1]
-            const description = parsed.description || text
+            const userAccounts = await getUserAccounts(profile.id)
+            if (userAccounts.length === 0) {
+              await sendTelegram(chatId, '❌ Nenhuma conta encontrada. Crie uma conta no app primeiro.')
+              return res.status(200).json({ ok: true })
+            }
 
-            const { error } = await sb.from('transactions').insert({
-              user_id: profile.id,
-              account_id: accountId,
-              date: new Date().toISOString().split('T')[0],
-              description,
-              value: parsed.value,
-              type: parsed.type,
+            const fallbackAccount = userAccounts[0]
+            let matchedAccount = fallbackAccount
+
+            if (parsed.accountId) {
+              const normalizedSearch = parsed.accountId.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+              const found = userAccounts.find((a: any) =>
+                a.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') === normalizedSearch
+              )
+              if (found) matchedAccount = found
+            }
+
+            const category = parsed.category || 'Outros'
+            const description = parsed.description || text.replace(/\s+\S+\s+\S+/g, '').trim()
+
+            pendingConfirmations.set(chatId, {
+              userId: profile.id,
+              parsed,
+              accountId: matchedAccount.id,
+              accountName: matchedAccount.name,
               category,
+              description,
             })
 
-            if (error) {
-              await sendTelegram(chatId, `❌ Erro ao salvar: ${error.message}`)
-            } else {
-              const emoji = parsed.type === 'income' ? '💰' : parsed.type === 'expense' ? '💸' : '📈'
-              const label = parsed.type === 'income' ? 'Receita' : parsed.type === 'expense' ? 'Despesa' : 'Investimento'
-              const sign = parsed.type === 'income' ? '+' : '-'
-
-              await sendTelegram(chatId,
-                `✅ *Transação salva!*\n\n` +
-                `${emoji} ${label}\n` +
-                `📝 ${description}\n` +
-                `💵 ${sign} R$ ${Number(parsed.value).toFixed(2).replace('.', ',')}\n` +
-                `🏷 ${category}\n` +
-                `🏦 ${accountName}`
-              )
-            }
+            await sendTelegram(chatId, formatTransactionPreview(parsed, matchedAccount.name))
           }
         }
       } catch (err: any) {
@@ -377,5 +387,49 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ ok: true })
   } catch (err: any) {
     return res.status(200).json({ ok: true, error: err.message })
+  }
+}
+
+async function formatBudgetWarning(sb: any, userId: string, category: string, type: string): Promise<string> {
+  try {
+    const now = new Date()
+    const month = now.getMonth() + 1
+    const year = now.getFullYear()
+
+    const { data: budgets } = await sb
+      .from('budgets')
+      .select('limit_amount')
+      .eq('user_id', userId)
+      .eq('category', category)
+      .eq('type', type)
+      .eq('month', month)
+      .eq('year', year)
+      .single()
+
+    if (!budgets) return ''
+
+    const firstDay = new Date(year, month - 1, 1).toISOString().split('T')[0]
+    const lastDay = new Date(year, month, 0).toISOString().split('T')[0]
+
+    const { data: spentData } = await sb
+      .from('transactions')
+      .select('value')
+      .eq('user_id', userId)
+      .eq('category', category)
+      .gte('date', firstDay)
+      .lte('date', lastDay)
+
+    const spent = (spentData || []).reduce((s: number, t: any) => s + Number(t.value), 0)
+    const limit = budgets.limit_amount
+    const pct = (spent / limit) * 100
+
+    if (pct >= 100) {
+      return `\n\n⚠️ *Orçamento excedido!* "${category}" já atingiu ${pct.toFixed(0)}% do limite (${spent.toFixed(2).replace('.', ',')}/${limit.toFixed(2).replace('.', ',')})`
+    } else if (pct >= 80) {
+      return `\n\n⚠️ *Atenção:* "${category}" está em ${pct.toFixed(0)}% do limite (${spent.toFixed(2).replace('.', ',')}/${limit.toFixed(2).replace('.', ',')})`
+    }
+    return ''
+  } catch {
+    return ''
   }
 }

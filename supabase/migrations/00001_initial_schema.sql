@@ -61,13 +61,12 @@ create or replace function public.seed_default_accounts()
 returns trigger as $$
 begin
   insert into public.accounts (user_id, name, color) values
-    (new.id, 'Sicoob', '#3b82f6'),
+    (new.id, 'C6', '#e11d48'),
+    (new.id, 'Santander', '#ec0000'),
+    (new.id, '99Pay', '#22c55e'),
     (new.id, 'Mercado Pago', '#00b5e2'),
     (new.id, 'Rico', '#7c3aed'),
-    (new.id, 'Nubank', '#8a05be'),
-    (new.id, 'Itaú', '#ec7000'),
-    (new.id, 'Caixa', '#268744'),
-    (new.id, 'Outro', '#6b7280');
+    (new.id, 'Sicoob', '#3b82f6');
   return new;
 end;
 $$ language plpgsql security definer;

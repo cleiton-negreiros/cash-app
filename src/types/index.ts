@@ -1,5 +1,9 @@
 export type TransactionType = 'income' | 'expense' | 'investment'
 
+export type AccountType = 'checking' | 'savings' | 'credit_card'
+
+export type TransactionStatus = 'confirmed' | 'pending' | 'paid' | 'overdue' | 'cancelled'
+
 export interface Transaction {
   id: string
   date: string
@@ -8,6 +12,13 @@ export interface Transaction {
   type: TransactionType
   category: string
   account: string
+  notes?: string
+  dueDate?: string
+  status?: TransactionStatus
+  installmentCurrent?: number
+  installmentTotal?: number
+  purchaseDate?: string
+  parentTransactionId?: string
 }
 
 export interface Account {
@@ -15,6 +26,10 @@ export interface Account {
   name: string
   balance: number
   color: string
+  accountType?: AccountType
+  creditLimit?: number
+  closingDay?: number
+  dueDay?: number
 }
 
 export type RecurringFrequency = 'weekly' | 'biweekly' | 'monthly' | 'yearly'
@@ -59,6 +74,7 @@ export const CATEGORIES = {
     'Lazer',
     'Assinaturas',
     'Compras',
+    'Cartão',
     'Outros',
   ],
   investment: [
@@ -72,13 +88,12 @@ export const CATEGORIES = {
 }
 
 export const DEFAULT_ACCOUNTS: Account[] = [
-  { id: 'sicoob', name: 'Sicoob', balance: 0, color: '#3b82f6' },
-  { id: 'mercado-pago', name: 'Mercado Pago', balance: 0, color: '#00b5e2' },
-  { id: 'rico', name: 'Rico', balance: 0, color: '#7c3aed' },
-  { id: 'nubank', name: 'Nubank', balance: 0, color: '#8a05be' },
-  { id: 'itau', name: 'Itaú', balance: 0, color: '#ec7000' },
-  { id: 'caixa', name: 'Caixa', balance: 0, color: '#268744' },
-  { id: 'outro', name: 'Outro', balance: 0, color: '#6b7280' },
+  { id: 'c6', name: 'C6', balance: 0, color: '#e11d48', accountType: 'checking' },
+  { id: 'santander', name: 'Santander', balance: 0, color: '#ec0000', accountType: 'checking' },
+  { id: '99pay', name: '99Pay', balance: 0, color: '#22c55e', accountType: 'checking' },
+  { id: 'mercado-pago', name: 'Mercado Pago', balance: 0, color: '#00b5e2', accountType: 'checking' },
+  { id: 'rico', name: 'Rico', balance: 0, color: '#7c3aed', accountType: 'checking' },
+  { id: 'sicoob', name: 'Sicoob', balance: 0, color: '#3b82f6', accountType: 'checking' },
 ]
 
 export const MONTHS = [

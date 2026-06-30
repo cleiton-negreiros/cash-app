@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase'
-import type { Transaction, TransactionType } from '../types'
+import type { Transaction, TransactionType, AccountType } from '../types'
+import { DEFAULT_ACCOUNTS } from '../types'
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2)
@@ -30,17 +31,26 @@ export async function saveTransaction(
   data: Omit<Transaction, 'id'>
 ): Promise<Transaction> {
   try {
+    const insertData: Record<string, any> = {
+      user_id: userId,
+      account_id: data.account,
+      date: data.date,
+      description: data.description,
+      value: data.value,
+      type: data.type,
+      category: data.category,
+    }
+    if (data.notes) insertData.notes = data.notes
+    if (data.dueDate) insertData.due_date = data.dueDate
+    if (data.status) insertData.status = data.status
+    if (data.installmentCurrent) insertData.installment_current = data.installmentCurrent
+    if (data.installmentTotal) insertData.installment_total = data.installmentTotal
+    if (data.purchaseDate) insertData.purchase_date = data.purchaseDate
+    if (data.parentTransactionId) insertData.parent_transaction_id = data.parentTransactionId
+
     const { data: inserted, error } = await supabase
       .from('transactions')
-      .insert({
-        user_id: userId,
-        account_id: data.account,
-        date: data.date,
-        description: data.description,
-        value: data.value,
-        type: data.type,
-        category: data.category,
-      })
+      .insert(insertData)
       .select()
       .single()
 
@@ -60,10 +70,17 @@ export async function updateTransactionData(
     const updateData: Record<string, any> = {}
     if (data.account) updateData.account_id = data.account
     if (data.date) updateData.date = data.date
-    if (data.description) updateData.description = data.description
-    if (data.value) updateData.value = data.value
+    if (data.description !== undefined) updateData.description = data.description
+    if (data.value !== undefined) updateData.value = data.value
     if (data.type) updateData.type = data.type
     if (data.category) updateData.category = data.category
+    if (data.notes !== undefined) updateData.notes = data.notes
+    if (data.dueDate !== undefined) updateData.due_date = data.dueDate
+    if (data.status) updateData.status = data.status
+    if (data.installmentCurrent !== undefined) updateData.installment_current = data.installmentCurrent
+    if (data.installmentTotal !== undefined) updateData.installment_total = data.installmentTotal
+    if (data.purchaseDate !== undefined) updateData.purchase_date = data.purchaseDate
+    if (data.parentTransactionId !== undefined) updateData.parent_transaction_id = data.parentTransactionId
 
     const { error } = await supabase
       .from('transactions')
@@ -103,16 +120,91 @@ export async function getAccounts(userId: string) {
       .eq('user_id', userId)
 
     if (error) throw error
-    return {
-      accounts: data.map((a: any) => ({
-        id: a.id,
-        name: a.name,
-        balance: Number(a.initial_balance),
-        color: a.color,
-      })),
-    }
+
+    const userAccounts = data.length > 0
+      ? data.map((a: any) => ({
+          id: a.id,
+          name: a.name,
+          balance: Number(a.initial_balance),
+          color: a.color,
+          accountType: (a.account_type || 'checking') as AccountType,
+          creditLimit: a.credit_limit ? Number(a.credit_limit) : undefined,
+          closingDay: a.closing_day,
+          dueDay: a.due_day,
+        }))
+      : DEFAULT_ACCOUNTS
+
+    return { accounts: userAccounts }
   } catch {
     return getLocalAccounts(userId)
+  }
+}
+
+export async function saveAccount(
+  userId: string,
+  data: {
+    name: string
+    color: string
+    accountType: AccountType
+    creditLimit?: number
+    closingDay?: number
+    dueDay?: number
+  }
+) {
+  try {
+    const insertData: Record<string, any> = {
+      user_id: userId,
+      name: data.name,
+      color: data.color,
+      account_type: data.accountType,
+    }
+    if (data.creditLimit !== undefined) insertData.credit_limit = data.creditLimit
+    if (data.closingDay !== undefined) insertData.closing_day = data.closingDay
+    if (data.dueDay !== undefined) insertData.due_day = data.dueDay
+
+    const { data: inserted, error } = await supabase
+      .from('accounts')
+      .insert(insertData)
+      .select()
+      .single()
+
+    if (error) throw error
+    return inserted
+  } catch {
+    return null
+  }
+}
+
+export async function updateAccount(
+  userId: string,
+  id: string,
+  data: {
+    name?: string
+    color?: string
+    accountType?: AccountType
+    creditLimit?: number
+    closingDay?: number
+    dueDay?: number
+  }
+) {
+  try {
+    const updateData: Record<string, any> = {}
+    if (data.name) updateData.name = data.name
+    if (data.color) updateData.color = data.color
+    if (data.accountType) updateData.account_type = data.accountType
+    if (data.creditLimit !== undefined) updateData.credit_limit = data.creditLimit
+    if (data.closingDay !== undefined) updateData.closing_day = data.closingDay
+    if (data.dueDay !== undefined) updateData.due_day = data.dueDay
+
+    const { error } = await supabase
+      .from('accounts')
+      .update(updateData)
+      .eq('id', id)
+      .eq('user_id', userId)
+
+    if (error) throw error
+  } catch {
+    // silent fail for local
   }
 }
 
@@ -126,6 +218,13 @@ function mapTransaction(row: any): Transaction {
     type: row.type as TransactionType,
     category: row.category,
     account: row.account_id,
+    notes: row.notes || undefined,
+    dueDate: row.due_date || undefined,
+    status: row.status || undefined,
+    installmentCurrent: row.installment_current || undefined,
+    installmentTotal: row.installment_total || undefined,
+    purchaseDate: row.purchase_date || undefined,
+    parentTransactionId: row.parent_transaction_id || undefined,
   }
 }
 
@@ -163,6 +262,6 @@ function deleteLocalTransaction(userId: string, id: string) {
 
 function getLocalAccounts(userId: string) {
   const raw = localStorage.getItem(getStorageKey(userId, 'accounts'))
-  const accounts = raw ? JSON.parse(raw) : []
+  const accounts = raw ? JSON.parse(raw) : DEFAULT_ACCOUNTS
   return { accounts }
 }
