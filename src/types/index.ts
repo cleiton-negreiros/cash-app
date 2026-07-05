@@ -30,6 +30,7 @@ export interface Account {
   creditLimit?: number
   closingDay?: number
   dueDay?: number
+  linkedAccountId?: string
 }
 
 export type RecurringFrequency = 'weekly' | 'biweekly' | 'monthly' | 'yearly'
@@ -101,6 +102,96 @@ export const MONTHS = [
   'Maio', 'Junho', 'Julho', 'Agosto',
   'Setembro', 'Outubro', 'Novembro', 'Dezembro',
 ]
+
+export type InvestmentType =
+  | 'stock' | 'fii' | 'fixed_income' | 'crypto' | 'treasury'
+  | 'selic' | 'cdb' | 'pre_fixed' | 'cdb_sl' | 'ipca' | 'lci'
+  | 'dolar' | 'pension' | 'fgts' | 'reserves' | 'variable' | 'other'
+
+export type InvestmentTxType = 'buy' | 'sell' | 'dividend' | 'interest' | 'income'
+
+export interface Investment {
+  id: string
+  ticker: string
+  name: string
+  type: InvestmentType
+  quantity: number
+  averagePrice: number
+  currentPrice: number
+  accountId: string
+  totalInvested: number
+  totalRedeemed: number
+  totalYield: number
+}
+
+export interface InvestmentTransaction {
+  id: string
+  investmentId?: string
+  ticker: string
+  type: InvestmentTxType
+  quantity: number
+  price: number
+  total: number
+  date: string
+  notes?: string
+}
+
+export interface Loan {
+  id: string
+  name: string
+  totalAmount: number
+  remainingBalance: number
+  interestRate: number
+  monthlyPayment: number
+  startDate: string
+  endDate?: string
+  notes?: string
+}
+
+export interface MonthlySnapshot {
+  id: string
+  refMonth: number
+  refYear: number
+  accountsBalance: number
+  investmentsBalance: number
+  loansBalance: number
+  totalEquity: number
+  incomeTotal: number
+  expenseTotal: number
+  loanPayment: number
+  investedTotal: number
+  redeemedTotal: number
+  investmentYield: number
+  ccYield: number
+}
+
+export const INVESTMENT_TYPE_LABELS: Record<InvestmentType, string> = {
+  stock: 'Variável',
+  fii: 'FIIs',
+  fixed_income: 'Renda Fixa',
+  crypto: 'Criptos',
+  treasury: 'Tesouro Direto',
+  selic: 'SELICs',
+  cdb: 'CDBs',
+  pre_fixed: 'Prefixados',
+  cdb_sl: 'CDB s/l',
+  ipca: 'IPCAs+',
+  lci: 'LCIs',
+  dolar: 'Dólar',
+  pension: 'Previdência',
+  fgts: 'FGTS',
+  reserves: 'Reservas',
+  variable: 'Variável',
+  other: 'Outros',
+}
+
+export const INVESTMENT_TX_LABELS: Record<InvestmentTxType, string> = {
+  buy: 'Compra',
+  sell: 'Venda',
+  dividend: 'Dividendo',
+  interest: 'Juros',
+  income: 'Rendimento',
+}
 
 export const FREQUENCY_LABELS: Record<RecurringFrequency, string> = {
   weekly: 'Semanal',

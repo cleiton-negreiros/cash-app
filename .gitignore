@@ -24,7 +24,11 @@ dist-ssr
 *.sw?
 
 .opencode/
+.hermes/
 
 .vercel
 .env
 .env*.local
+
+# Dados financeiros pessoais (planilhas exportadas)
+*.csv

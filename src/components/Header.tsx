@@ -1,4 +1,4 @@
-import { Wallet, Plus, X, User, Repeat, Target, CreditCard, Upload } from 'lucide-react'
+import { Wallet, Plus, X, User, Repeat, Target, CreditCard, Upload, TrendingUp, BarChart3, Landmark } from 'lucide-react'
 
 interface HeaderProps {
   activeTab: string
@@ -11,6 +11,9 @@ interface HeaderProps {
 const tabs = [
   { id: 'dashboard', label: 'Dashboard', icon: null },
   { id: 'transactions', label: 'Transações', icon: null },
+  { id: 'investments', label: 'Investimentos', icon: TrendingUp },
+  { id: 'position', label: 'Posição', icon: BarChart3 },
+  { id: 'balance', label: 'Balanço', icon: Landmark },
   { id: 'invoice', label: 'Faturas', icon: CreditCard },
   { id: 'recurring', label: 'Recorrentes', icon: Repeat },
   { id: 'budgets', label: 'Orçamentos', icon: Target },

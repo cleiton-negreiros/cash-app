@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { PIX_KEY, PIX_NAME } from '../lib/constants'
 import { generateTelegramLinkCode, unlinkTelegram } from '../services/telegramService'
-import { User, Copy, Check, Heart, Wallet, Send, Loader2, ExternalLink, Unlink, Construction } from 'lucide-react'
+import { User, Copy, Check, Heart, Wallet, Send, Loader2, ExternalLink, Unlink, Construction, LayoutDashboard } from 'lucide-react'
 
 const BOT_USERNAME = import.meta.env.VITE_TELEGRAM_BOT_USERNAME || 'cashapp_bot'
 
@@ -13,6 +13,7 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState(false)
   const [showDonate, setShowDonate] = useState(false)
+  const [defaultTab, setDefaultTab] = useState(() => localStorage.getItem('cashapp:defaultTab') || 'dashboard')
   const [telegramId, setTelegramId] = useState<number | null>(null)
   const [telegramUsername, setTelegramUsername] = useState<string | null>(null)
   const [linkCode, setLinkCode] = useState<string | null>(null)
@@ -133,6 +134,33 @@ export default function ProfilePage() {
             </button>
           </div>
         )}
+
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-5">
+          <div className="mb-3 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/10">
+              <LayoutDashboard className="h-5 w-5 text-violet-400" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-zinc-200">Tela Inicial</p>
+              <p className="text-xs text-zinc-500">Qual aba abrir ao entrar</p>
+            </div>
+          </div>
+          <select
+            value={defaultTab}
+            onChange={(e) => {
+              setDefaultTab(e.target.value)
+              localStorage.setItem('cashapp:defaultTab', e.target.value)
+            }}
+            className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-100 outline-none"
+          >
+            <option value="dashboard">Dashboard</option>
+            <option value="transactions">Transações</option>
+            <option value="investments">Investimentos</option>
+            <option value="position">Posição</option>
+            <option value="balance">Balanço</option>
+            <option value="invoice">Faturas</option>
+          </select>
+        </div>
 
         <div className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-5">
           <div className="mb-3 flex items-center justify-between">

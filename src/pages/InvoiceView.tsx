@@ -2,11 +2,12 @@ import { useState, useMemo } from 'react'
 import type { Transaction, Account } from '../types'
 import { MONTHS } from '../types'
 import { formatCurrency, formatDate } from '../utils/format'
-import { CreditCard, ChevronLeft, ChevronRight, ArrowDownRight } from 'lucide-react'
+import { CreditCard, ChevronLeft, ChevronRight, ArrowDownRight, Send, CheckCircle2 } from 'lucide-react'
 
 interface InvoiceViewProps {
   transactions: Transaction[]
   accounts: Account[]
+  onPayInvoice?: (data: Omit<Transaction, 'id'>) => void
 }
 
 function getInvoicePeriod(account: Account, referenceDate: Date) {
@@ -39,15 +40,17 @@ function getInvoicePeriod(account: Account, referenceDate: Date) {
   }
 }
 
-export default function InvoiceView({ transactions, accounts }: InvoiceViewProps) {
+export default function InvoiceView({ transactions, accounts, onPayInvoice }: InvoiceViewProps) {
   const [selectedAccount, setSelectedAccount] = useState(
     accounts.find((a) => a.accountType === 'credit_card')?.id || ''
   )
   const [referenceDate, setReferenceDate] = useState(new Date())
+  const [paid, setPaid] = useState(false)
 
   const creditCards = accounts.filter((a) => a.accountType === 'credit_card')
 
   const account = accounts.find((a) => a.id === selectedAccount)
+  const linkedAccount = account ? accounts.find((a) => a.id === account.linkedAccountId) : null
   const period = account ? getInvoicePeriod(account, referenceDate) : null
 
   const invoiceTransactions = useMemo(() => {
@@ -63,12 +66,30 @@ export default function InvoiceView({ transactions, accounts }: InvoiceViewProps
     const d = new Date(referenceDate)
     d.setMonth(d.getMonth() - 1)
     setReferenceDate(d)
+    setPaid(false)
   }
 
   function handleNext() {
     const d = new Date(referenceDate)
     d.setMonth(d.getMonth() + 1)
     setReferenceDate(d)
+    setPaid(false)
+  }
+
+  function handlePayInvoice() {
+    if (!onPayInvoice || !account || !period?.dueDate || !linkedAccount) return
+
+    onPayInvoice({
+      date: period.dueDate,
+      description: `Pagamento Fatura ${account.name}`,
+      value: total,
+      type: 'expense',
+      category: 'Cartão',
+      account: linkedAccount.id,
+      notes: `Fatura ${period.label}`,
+      status: 'confirmed',
+    })
+    setPaid(true)
   }
 
   if (creditCards.length === 0) {
@@ -86,13 +107,19 @@ export default function InvoiceView({ transactions, accounts }: InvoiceViewProps
       <div className="flex items-center justify-between">
         <select
           value={selectedAccount}
-          onChange={(e) => setSelectedAccount(e.target.value)}
+          onChange={(e) => { setSelectedAccount(e.target.value); setPaid(false) }}
           className="rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-100 outline-none"
         >
           {creditCards.map((c) => (
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </select>
+        {account?.linkedAccountId && linkedAccount && (
+          <div className="flex items-center gap-1.5 text-xs text-zinc-500">
+            <Send className="h-3 w-3" />
+            <span>Pago via <span className="text-zinc-300">{linkedAccount.name}</span></span>
+          </div>
+        )}
       </div>
 
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-5">
@@ -131,6 +158,22 @@ export default function InvoiceView({ transactions, accounts }: InvoiceViewProps
             </p>
           </div>
         </div>
+
+        {total > 0 && linkedAccount && (
+          paid ? (
+            <div className="flex items-center justify-center gap-2 py-3 text-emerald-400 text-sm font-semibold">
+              <CheckCircle2 className="h-5 w-5" />
+              Fatura registrada como despesa em {linkedAccount.name}
+            </div>
+          ) : (
+            <button
+              onClick={handlePayInvoice}
+              className="w-full rounded-xl bg-emerald-500 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 transition-all hover:bg-emerald-400 active:scale-[0.98] mb-4"
+            >
+              Pagar Fatura via {linkedAccount.name}
+            </button>
+          )
+        )}
 
         {invoiceTransactions.length === 0 ? (
           <div className="text-center py-8 text-zinc-600">

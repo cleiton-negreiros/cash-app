@@ -1,21 +1,29 @@
-import pg from 'pg'
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
+import pkg from 'pg';
+const { Pool } = pkg;
 
-const c = new pg.Client({
-  connectionString: 'postgres://postgres:0ZnDmyLZgSrZhHiI@db.ykeexatcexgdhoyprixm.supabase.co:5432/postgres?sslmode=require',
-})
-await c.connect()
-const r = await c.query(`
-  SELECT column_name, data_type
-  FROM information_schema.columns
-  WHERE table_name = 'transactions'
-  ORDER BY ordinal_position
-`)
-console.log('TRANSACTIONS:')
-for (const row of r.rows) console.log(`  ${row.column_name}: ${row.data_type}`)
+const pool = new Pool({
+  host: 'aws-1-us-east-1.pooler.supabase.com', port: 5432, database: 'postgres',
+  user: 'postgres.ykeexatcexgdhoyprixm',
+  password: process.env.POSTGRES_PASSWORD,
+  ssl: { rejectUnauthorized: false }
+});
 
-const r2 = await c.query(`SELECT id, name FROM accounts ORDER BY name`)
-console.log('\nACCOUNTS:')
-for (const row of r2.rows) console.log(`  ${row.id} (${row.name})`)
-
-await c.end()
+async function main() {
+  const { rows } = await pool.query(`
+    select table_name, column_name, data_type, is_nullable
+    from information_schema.columns
+    where table_schema = 'public'
+    order by table_name, ordinal_position
+  `);
+  const byTable = {};
+  for (const r of rows) {
+    if (!byTable[r.table_name]) byTable[r.table_name] = [];
+    byTable[r.table_name].push(`${r.column_name} ${r.data_type} ${r.is_nullable === 'YES' ? 'NULL' : 'NOT NULL'}`);
+  }
+  for (const [t, cols] of Object.entries(byTable)) {
+    console.log(`\n${t}:`);
+    cols.forEach(c => console.log(`  ${c}`));
+  }
+  await pool.end();
+}
+main().catch(e => { console.error(e); process.exit(1); });

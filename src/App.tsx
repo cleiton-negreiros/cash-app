@@ -18,10 +18,19 @@ import { ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-react'
 import ProfilePage from './pages/ProfilePage'
 import InvoiceView from './pages/InvoiceView'
 import StatementImport from './pages/StatementImport'
+import InvestmentPortfolio from './pages/InvestmentPortfolio'
+import PosicaoAtual from './pages/PosicaoAtual'
+import BalancoMensal from './pages/BalancoMensal'
 
 function AppContent() {
   const { user } = useAuth()
-  const [activeTab, setActiveTab] = useState('dashboard')
+  const [activeTab, setActiveTabState] = useState(() => localStorage.getItem('cashapp:defaultTab') || localStorage.getItem('cashapp:tab') || 'dashboard')
+
+  function setActiveTab(tab: string) {
+    localStorage.setItem('cashapp:tab', tab)
+    setActiveTabState(tab)
+  }
+
   const [showForm, setShowForm] = useState(false)
   const [editTransaction, setEditTransaction] = useState<Transaction | null>(null)
   const [currentPeriod, setCurrentPeriod] = useState(getCurrentMonthYear())
@@ -39,7 +48,7 @@ function AppContent() {
   })
 
   const totals = getTotals(currentMonth, currentYear)
-  const { accounts, loading: accountsLoading, invoiceTotals } = useAccounts(transactions, currentMonth, currentYear)
+  const { accounts, loading: accountsLoading, invoiceTotals } = useAccounts(transactions)
 
   const currentMonthLabel = `${MONTHS[currentMonth]} ${currentYear}`
 
@@ -192,7 +201,23 @@ function AppContent() {
           <InvoiceView
             transactions={transactions}
             accounts={accounts}
+            onPayInvoice={async (data) => {
+              await addTransaction(data)
+              setToast({ message: 'Fatura registrada como despesa!', type: 'success' })
+            }}
           />
+        )}
+
+        {activeTab === 'investments' && (
+          <InvestmentPortfolio />
+        )}
+
+        {activeTab === 'position' && (
+          <PosicaoAtual />
+        )}
+
+        {activeTab === 'balance' && (
+          <BalancoMensal />
         )}
 
         {activeTab === 'import' && (

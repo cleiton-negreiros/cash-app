@@ -29,7 +29,7 @@ function getInvoicePeriod(account: Account, date: Date) {
   return { start, end }
 }
 
-export function useAccounts(transactions: Transaction[], currentMonth: number, currentYear: number) {
+export function useAccounts(transactions: Transaction[]) {
   const { user } = useAuth()
   const [accounts, setAccounts] = useState<Account[]>(DEFAULT_ACCOUNTS)
   const [loading, setLoading] = useState(true)
@@ -38,20 +38,14 @@ export function useAccounts(transactions: Transaction[], currentMonth: number, c
 
   useEffect(() => {
     dataService.getAccounts(userId).then(({ accounts: data }) => {
-      if (data.length > 0) {
-        setAccounts(data as Account[])
-      }
+      if (data.length > 0) setAccounts(data as Account[])
       setLoading(false)
     })
   }, [userId])
 
   const { accountsWithBalance, invoiceTotals } = useMemo(() => {
-    const filtered = transactions.filter((t) => {
-      const date = new Date(t.date + 'T12:00:00')
-      return date.getMonth() === currentMonth && date.getFullYear() === currentYear
-    })
-
     const invoiceTotals: Record<string, number> = {}
+    const ccInvoices: Record<string, { total: number; linkedTo: string }> = {}
 
     const result = accounts.map((account) => {
       if (account.accountType === 'credit_card') {
@@ -68,22 +62,33 @@ export function useAccounts(transactions: Transaction[], currentMonth: number, c
             .reduce((acc, t) => acc + t.value, 0)
         }
         invoiceTotals[account.id] = total
+        if (account.linkedAccountId) {
+          ccInvoices[account.id] = { total, linkedTo: account.linkedAccountId }
+        }
         return { ...account, balance: total }
       }
 
-      const total = filtered
+      const rawBalance = transactions
         .filter((t) => t.account === account.id)
         .reduce((acc, t) => {
           if (t.type === 'income') return acc + t.value
           if (t.type === 'expense' || t.type === 'investment') return acc - t.value
           return acc
-        }, 0)
+        }, Number(account.balance || 0))
 
-      return { ...account, balance: total }
+      return { ...account, balance: rawBalance }
     })
 
-    return { accountsWithBalance: result, invoiceTotals }
-  }, [accounts, transactions, currentMonth, currentYear])
+    const finalAccounts = result.map((account) => {
+      if (account.accountType === 'credit_card') return account
+      const linkedInvoiceTotal = Object.values(ccInvoices)
+        .filter((inv) => inv.linkedTo === account.id)
+        .reduce((s, inv) => s + inv.total, 0)
+      return { ...account, balance: account.balance - linkedInvoiceTotal }
+    })
+
+    return { accountsWithBalance: finalAccounts, invoiceTotals }
+  }, [accounts, transactions])
 
   return { accounts: accountsWithBalance, loading, setAccounts, invoiceTotals }
 }

@@ -1,8 +1,30 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 
-function parseOFX(content: string): { description: string; value: number; date: string; type: string }[] {
-  const transactions: { description: string; value: number; date: string; type: string }[] = []
+const CATEGORY_RULES: [RegExp, string][] = [
+  [/ifood|rappi|uber\s*eats|aça[ií]|restaurante|lanche|pizza|self.?service|padaria|mercearia|supermercado|mercado|açougue|hortifruti|feira/i, 'Alimentação'],
+  [/shell|ipiranga|petrobras|posto|combust[ií]vel|gasolina|etanol|diesel/i, 'Transporte'],
+  [/uber|99\s*(pop|taxi)|taxi|metrô|recarga\s*cel|pedágio|estacionamento/i, 'Transporte'],
+  [/aluguel|condom[ií]nio|iptu|ipva|luz|energia|água|saneamento|gás|net|tv\s*por\s*cabo|internet|telefone/i, 'Moradia'],
+  [/farmácia|drogasil|drogaraia|médico|dentista|plano\s*saúde|convênio|hospital|exame/i, 'Saúde'],
+  [/faculdade|curso|escola|udemy|coursera|alura|inglês|edu.cr|mensalidade/i, 'Educação'],
+  [/cinema|netflix|spotify|prime\s*video|disney|hbomax|hbo\s*max|paramount|jogos|ingresso|show|teatro|academia|clube/i, 'Lazer'],
+  [/shein|shopee|magazine\s*luiza|mercado\s*livre|amazon|americanas|submarino|casas\s*bahia|roupa|calçado|eletro/i, 'Compras'],
+  [/pagamento\s*(de\s*)?fatura|cartão|nubank|creditas|will\s*bank|inter/i, 'Cartão'],
+  [/salário|pagamento\s*fornecedor|freela|projeto|consultoria|nota\s*fiscal/i, 'Salário'],
+  [/rendimento|dividendo|juros\s*sobre|poupança|cdb|lci|lca|tesouro|fii\s*rend|ação/i, 'Investimentos'],
+  [/boleto|darft|tarifa|iof|cpmf|ir\s*|imposto|taxa/i, 'Outros'],
+]
+
+function detectCategory(description: string): string {
+  for (const [pattern, category] of CATEGORY_RULES) {
+    if (pattern.test(description)) return category
+  }
+  return 'Outros'
+}
+
+function parseOFX(content: string): { description: string; value: number; date: string; type: string; category: string }[] {
+  const transactions: { description: string; value: number; date: string; type: string; category: string }[] = []
   const lines = content.split('\n')
   let currentDesc = ''
   let currentValue = 0
@@ -32,6 +54,7 @@ function parseOFX(content: string): { description: string; value: number; date: 
           value: currentValue,
           date: currentDate,
           type: currentType,
+          category: currentType === 'income' ? 'Outros' : detectCategory(currentDesc),
         })
       }
       currentDesc = ''
@@ -83,10 +106,6 @@ function findColumnIndex(columns: string[], matchers: ((col: string) => boolean)
   return -1
 }
 
-function hasAll(col: string, keywords: string[]): boolean {
-  return keywords.every((kw) => col.includes(kw))
-}
-
 function hasAny(col: string, keywords: string[]): boolean {
   return keywords.some((kw) => col.includes(kw))
 }
@@ -107,8 +126,8 @@ function parseDate(dateStr: string): string {
   return dateStr
 }
 
-function parseCSV(content: string): { description: string; value: number; date: string; type: string }[] {
-  const transactions: { description: string; value: number; date: string; type: string }[] = []
+function parseCSV(content: string): { description: string; value: number; date: string; type: string; category: string }[] {
+  const transactions: { description: string; value: number; date: string; type: string; category: string }[] = []
   const lines = content.split('\n').filter((l) => l.trim())
   if (lines.length < 2) return transactions
 
@@ -119,9 +138,7 @@ function parseCSV(content: string): { description: string; value: number; date: 
 
   const headerCols = header.toLowerCase().split(delim).map((c) => c.trim().replace(/^"|"$/g, ''))
 
-  const dateIdx = findColumnIndex(headerCols, [
-    (c) => hasAny(c, ['data']),
-  ])
+  const dateIdx = findColumnIndex(headerCols, [(c) => hasAny(c, ['data'])])
   const descIdx = findColumnIndex(headerCols, [
     (c) => hasAny(c, ['descricao', 'descrição', 'descri']),
     (c) => hasAny(c, ['historico', 'nome']),
@@ -130,7 +147,7 @@ function parseCSV(content: string): { description: string; value: number; date: 
     (c) => hasAny(c, ['r$', 'brl']) && hasAny(c, ['valor']),
     (c) => hasAny(c, ['valor', 'amount', 'montante']),
   ])
-  const typeIdx = findColumnIndex(headerCols, ['tipo', 'natureza'])
+  findColumnIndex(headerCols, [(c) => hasAny(c, ['tipo', 'natureza'])])
 
   for (let i = 1; i < lines.length; i++) {
     const row = lines[i].split(delim).map((c) => c.trim().replace(/^"|"$/g, ''))
@@ -160,6 +177,7 @@ function parseCSV(content: string): { description: string; value: number; date: 
       value: Math.abs(parsedValue),
       date,
       type,
+      category: detectCategory(desc),
     })
   }
 
