@@ -84,6 +84,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         `🤖 *CashApp Bot*\n\n` +
         `*Comandos:*\n` +
         `/start - Boas-vindas\n` +
+        `/gerar - Gerar código de link (sem login)\n` +
         `/link CODIGO - Vincular conta\n` +
         `/transacoes - Ver últimas\n` +
         `/resumo - Resumo do mês\n` +
@@ -111,7 +112,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .single()
 
           if (!profile) {
-            await sendTelegram(chatId, '❌ Código inválido ou expirado.')
+            const { data: pending } = await sb
+              .from('telegram_pending_codes')
+              .select('*')
+              .eq('code', cleanCode)
+              .single()
+
+            if (!pending) {
+              await sendTelegram(chatId, '❌ Código inválido ou expirado.')
+            } else if (new Date(pending.expires_at) < new Date()) {
+              await sendTelegram(chatId, '❌ Código expirado. Gere um novo com /gerar.')
+            } else if (pending.telegram_id !== telegramId) {
+              await sendTelegram(chatId, '❌ Este código não foi gerado para este Telegram.')
+            } else {
+              await sb.from('telegram_pending_codes').update({ linked: true }).eq('code', cleanCode)
+              await sendTelegram(chatId,
+                `✅ *Código verificado!*\n\n` +
+                `Agora acesse o link abaixo para concluir a vinculação:\n\n` +
+                `https://cashapp-gamma-woad.vercel.app/telegram-link\n\n` +
+                `Insira o código \`${cleanCode}\` e seu email do CashApp.`
+              )
+            }
           } else if (profile.telegram_id && profile.telegram_id !== telegramId) {
             await sendTelegram(chatId, '❌ Esta conta já está vinculada a outro Telegram.')
           } else if (new Date(profile.telegram_link_code_expires_at) < new Date()) {
@@ -136,6 +157,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         } catch {
           await sendTelegram(chatId, '❌ Erro ao processar vinculação.')
         }
+      }
+    } else if (text === '/gerar' || text.startsWith('/gerar')) {
+      try {
+        const sb = getSupabase()
+        const code = Math.random().toString(36).slice(2, 8).toUpperCase()
+        const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString()
+
+        await sb.from('telegram_pending_codes').insert({
+          code,
+          telegram_id: telegramId,
+          telegram_username: username || null,
+          expires_at: expiresAt,
+        })
+
+        await sendTelegram(chatId,
+          `✅ *Código gerado!*\n\n` +
+          `Seu código: \`${code}\`\n` +
+          `Válido por 15 minutos.\n\n` +
+          `Envie /link ${code} para verificar, depois acesse o app em *Perfil → Telegram* para concluir.`
+        )
+      } catch {
+        await sendTelegram(chatId, '❌ Erro ao gerar código. Tente novamente.')
       }
     } else if (text === '/transacoes' || text.startsWith('/transacoes')) {
       try {

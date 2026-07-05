@@ -13,7 +13,7 @@ export async function generateTelegramLinkCode() {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: authHeader,
+      Authorization: `Bearer ${authHeader}`,
     },
   })
 
@@ -33,7 +33,7 @@ export async function unlinkTelegram() {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: authHeader,
+      Authorization: `Bearer ${authHeader}`,
     },
   })
 
