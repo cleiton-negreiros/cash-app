@@ -9,6 +9,10 @@
       "destination": "/api/$1"
     },
     {
+      "source": "/telegram-link",
+      "destination": "/telegram-link.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
