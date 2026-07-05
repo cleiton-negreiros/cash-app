@@ -21,13 +21,6 @@ export default function ProfilePage() {
   const [generatingCode, setGeneratingCode] = useState(false)
   const [unlinking, setUnlinking] = useState(false)
 
-  useEffect(() => {
-    if (user?.user_metadata?.name) {
-      setName(user.user_metadata.name)
-    }
-    loadTelegramStatus()
-  }, [user])
-
   async function loadTelegramStatus() {
     if (!user) return
     const { data } = await supabase
@@ -43,6 +36,13 @@ export default function ProfilePage() {
       setLinkExpiresAt(data.telegram_link_code_expires_at)
     }
   }
+
+  useEffect(() => {
+    if (user?.user_metadata?.name) {
+      setName(user.user_metadata.name)
+    }
+    loadTelegramStatus()
+  }, [user])
 
   async function handleSave() {
     if (!user) return

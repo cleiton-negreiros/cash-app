@@ -54,7 +54,7 @@ export default function StatementImport({ accounts, onImport }: { accounts: Acco
       const data = await res.json()
       setParsed(data.transactions || [])
       setSelectedRows(new Set(data.transactions.map((_: any, i: number) => i)))
-    } catch (err) {
+    } catch {
       alert('Erro ao processar arquivo. Verifique se o formato é suportado (OFX ou CSV).')
     }
 

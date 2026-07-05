@@ -17,10 +17,6 @@ export default function PosicaoAtual() {
   const [loading, setLoading] = useState(true)
   const [summary, setSummary] = useState<ReturnType<typeof computePositionSummary> | null>(null)
 
-  useEffect(() => {
-    if (user) load()
-  }, [user])
-
   async function load() {
     if (!user) return
     setLoading(true)
@@ -32,6 +28,10 @@ export default function PosicaoAtual() {
     }
     setLoading(false)
   }
+
+  useEffect(() => {
+    if (user) load()
+  }, [user])
 
   if (loading) {
     return (

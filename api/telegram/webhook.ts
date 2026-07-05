@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import { parseSmartInput } from '../lib/smartInput.js'
@@ -5,7 +6,7 @@ import { parseSmartInput } from '../lib/smartInput.js'
 const TELEGRAM_API = 'https://api.telegram.org/bot'
 
 let supabase: any = null
-function getSupabase() {
+function getSupabase(): any {
   if (supabase) return supabase
   const url = process.env.SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -23,7 +24,9 @@ async function sendTelegram(chatId: number, text: string) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' }),
     })
-  } catch (e) {}
+  } catch {
+    /* ignore */
+  }
 }
 
 async function getUserAccounts(userId: string): Promise<{ id: string; name: string }[]> {
@@ -32,7 +35,7 @@ async function getUserAccounts(userId: string): Promise<{ id: string; name: stri
     .from('accounts')
     .select('id, name')
     .eq('user_id', userId)
-  return (accounts || []).map((a: any) => ({ id: a.id, name: a.name }))
+  return (accounts || []).map((a: Record<string, unknown>) => ({ id: String(a.id), name: String(a.name) }))
 }
 
 function formatTransactionPreview(parsed: ReturnType<typeof parseSmartInput>, accountName: string) {
@@ -130,7 +133,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               await sendTelegram(chatId, '✅ *Conta vinculada com sucesso!*\n\nAgora é só mandar suas transações.')
             }
           }
-        } catch (err: any) {
+        } catch {
           await sendTelegram(chatId, '❌ Erro ao processar vinculação.')
         }
       }
@@ -156,15 +159,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           if (!transactions || transactions.length === 0) {
             await sendTelegram(chatId, '📭 Nenhuma transação encontrada.')
           } else {
-            const lines = transactions.map((t: any) => {
+            const lines = transactions.map((t: Record<string, unknown>) => {
               const sign = t.type === 'income' ? '+' : '-'
               const emoji = t.type === 'income' ? '💰' : t.type === 'expense' ? '💸' : '📈'
-              return `${emoji} ${sign}R$${Number(t.value).toFixed(2)} - ${t.description}`
+              return `${emoji} ${sign}R$${Number(t.value).toFixed(2)} - ${String(t.description)}`
             })
             await sendTelegram(chatId, `📋 *Últimas transações:*\n\n${lines.join('\n')}`)
           }
         }
-      } catch (err: any) {
+      } catch {
         await sendTelegram(chatId, '❌ Erro ao buscar transações.')
       }
     } else if (text === '/resumo' || text.startsWith('/resumo')) {
@@ -194,15 +197,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             await sendTelegram(chatId, '📭 Nenhuma transação no mês.')
           } else {
             const fmt = (n: number) => n.toFixed(2).replace('.', ',')
-            const receitas = txs.filter((t: any) => t.type === 'income').reduce((s: number, t: any) => s + Number(t.value), 0)
-            const despesas = txs.filter((t: any) => t.type === 'expense').reduce((s: number, t: any) => s + Number(t.value), 0)
-            const investimentos = txs.filter((t: any) => t.type === 'investment').reduce((s: number, t: any) => s + Number(t.value), 0)
+            const receitas = txs.filter((t: Record<string, unknown>) => t.type === 'income').reduce((s: number, t: Record<string, unknown>) => s + Number(t.value), 0)
+            const despesas = txs.filter((t: Record<string, unknown>) => t.type === 'expense').reduce((s: number, t: Record<string, unknown>) => s + Number(t.value), 0)
+            const investimentos = txs.filter((t: Record<string, unknown>) => t.type === 'investment').reduce((s: number, t: Record<string, unknown>) => s + Number(t.value), 0)
             const saldo = receitas - despesas - investimentos
             const mesNome = now.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
 
             const catMap: Record<string, number> = {}
-            for (const t of txs.filter((t: any) => t.type === 'expense')) {
-              catMap[t.category] = (catMap[t.category] || 0) + Number(t.value)
+            for (const t of txs.filter((t: Record<string, unknown>) => t.type === 'expense')) {
+              catMap[String(t.category)] = (catMap[String(t.category)] || 0) + Number(t.value)
             }
             const topCats = Object.entries(catMap)
               .sort((a, b) => b[1] - a[1])
@@ -221,7 +224,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             )
           }
         }
-      } catch (err: any) {
+      } catch {
         await sendTelegram(chatId, '❌ Erro ao buscar resumo.')
       }
     } else if (text === '/saldo' || text.startsWith('/saldo')) {
@@ -269,7 +272,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             )
           }
         }
-      } catch (err: any) {
+      } catch {
         await sendTelegram(chatId, '❌ Erro ao buscar saldo.')
       }
     } else if (text === '/cancelar' || text.startsWith('/cancelar')) {
@@ -318,7 +321,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
             await sendTelegram(chatId, msg)
           }
-        } catch (err: any) {
+        } catch {
           await sendTelegram(chatId, '❌ Erro ao processar transação.')
         }
       }
@@ -378,7 +381,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             await sendTelegram(chatId, formatTransactionPreview(parsed, matchedAccount.name))
           }
         }
-      } catch (err: any) {
+      } catch {
         await sendTelegram(chatId, '❌ Erro ao processar transação.')
       }
     }

@@ -87,7 +87,7 @@ function AppContent() {
               setToast({ message: `⚠️ "${data.category}" está em ${pct.toFixed(0)}% do limite`, type: 'warning' })
             }
           }
-        } catch {}
+        } catch { /* intentionally empty */ }
       }
     }
     setEditTransaction(null)

@@ -60,12 +60,14 @@ function tryParseDate(token: string): string | null {
   const patterns = [
     /^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/,
     /^(\d{1,2})-(\d{1,2})(?:-(\d{2,4}))?$/,
-    /^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/,
+    /^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/,
   ]
   for (const pattern of patterns) {
     const m = token.match(pattern)
     if (m) {
-      let day = parseInt(m[1]), month = parseInt(m[2]), year = m[3] ? parseInt(m[3]) : new Date().getFullYear()
+      const day = parseInt(m[1])
+      const month = parseInt(m[2])
+      let year = m[3] ? parseInt(m[3]) : new Date().getFullYear()
       if (year < 100) year += 2000
       if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
         return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`

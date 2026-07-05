@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Save,
   Trash2,
+  type LucideIcon,
 } from 'lucide-react'
 
 export default function BalancoMensal() {
@@ -125,7 +126,7 @@ export default function BalancoMensal() {
           investmentYield,
           ccYield: 0,
         })
-      } catch {}
+      } catch { /* intentionally empty */ }
     }
     compute()
   }, [user, currentMonth, year, transactions])
@@ -293,7 +294,7 @@ export default function BalancoMensal() {
 }
 
 function Card({ label, value, icon: Icon, color, bg }: {
-  label: string; value: number; icon: any; color: string; bg: string
+  label: string; value: number; icon: LucideIcon; color: string; bg: string
 }) {
   return (
     <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4">
