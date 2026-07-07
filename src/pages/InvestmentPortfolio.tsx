@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import type { Investment, InvestmentType } from '../types'
+import type { Investment, InvestmentType, Account } from '../types'
 import { INVESTMENT_TYPE_LABELS } from '../types'
 import { fetchInvestments, computePositionSummary, deleteInvestment, upsertInvestment } from '../services/investmentService'
+import { fetchAccounts } from '../services/accountService'
 import { formatCurrency } from '../utils/format'
 import { supabase } from '../lib/supabase'
 import { TrendingUp, TrendingDown, PiggyBank, BarChart3, Upload, Loader2, Plus, Trash2, X, Check, FileText, ArrowUpRight, ArrowDownRight } from 'lucide-react'
@@ -10,6 +11,7 @@ import { TrendingUp, TrendingDown, PiggyBank, BarChart3, Upload, Loader2, Plus, 
 export default function InvestmentPortfolio() {
   const { user } = useAuth()
   const [investments, setInvestments] = useState<Investment[]>([])
+  const [accounts, setAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editData, setEditData] = useState<Investment | null>(null)
@@ -18,7 +20,7 @@ export default function InvestmentPortfolio() {
   const [imported, setImported] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => { if (user) loadInvestments() }, [user])
+  useEffect(() => { if (user) { loadInvestments(); loadAccounts() } }, [user])
 
   async function loadInvestments() {
     if (!user) return
@@ -30,25 +32,37 @@ export default function InvestmentPortfolio() {
     setLoading(false)
   }
 
+  async function loadAccounts() {
+    if (!user) return
+    try {
+      const data = await fetchAccounts(user.id)
+      setAccounts(data)
+    } catch { /* ignore */ }
+  }
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!user) return
     const form = new FormData(e.currentTarget)
-    const totalInvested = parseFloat(form.get('totalInvested') as string) || 0
     const qty = parseFloat(form.get('quantity') as string) || 0
     const avgPrice = parseFloat(form.get('averagePrice') as string) || 0
     const curPrice = parseFloat(form.get('currentPrice') as string) || 0
+    const totalInvested = parseFloat(form.get('totalInvested') as string) || (qty * avgPrice)
+    const totalRedeemed = parseFloat(form.get('totalRedeemed') as string) || 0
+    const marketValue = qty * curPrice
+    const totalYield = parseFloat(form.get('totalYield') as string) || (marketValue + totalRedeemed - totalInvested)
+
     await upsertInvestment(user.id, {
       ticker: (form.get('ticker') as string).toUpperCase(),
-      name: form.get('name') as string,
+      name: form.get('name') as string || (form.get('ticker') as string).toUpperCase(),
       type: form.get('type') as InvestmentType,
       quantity: qty,
       averagePrice: avgPrice,
       currentPrice: curPrice,
-      accountId: 'rico',
+      accountId: form.get('accountId') as string || 'rico',
       totalInvested,
-      totalRedeemed: parseFloat(form.get('totalRedeemed') as string) || 0,
-      totalYield: parseFloat(form.get('totalYield') as string) || ((qty * curPrice) + (parseFloat(form.get('totalRedeemed') as string) || 0) - totalInvested),
+      totalRedeemed,
+      totalYield,
     })
     setShowForm(false)
     setEditData(null)
@@ -153,26 +167,7 @@ export default function InvestmentPortfolio() {
         </button>
       </div>
 
-      {showForm && (
-        <form onSubmit={handleSubmit} className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-5 space-y-4">
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            <input name="ticker" placeholder="Ticker" defaultValue={editData?.ticker || ''} required className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500/50" />
-            <input name="name" placeholder="Nome" defaultValue={editData?.name || ''} className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500/50" />
-            <select name="type" defaultValue={editData?.type || 'stock'} className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500/50">
-              {Object.entries(INVESTMENT_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-            <input name="quantity" type="number" step="0.000001" placeholder="Quantidade" defaultValue={editData?.quantity || 0} required className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500/50" />
-            <input name="averagePrice" type="number" step="0.01" placeholder="Preço Médio" defaultValue={editData?.averagePrice || 0} className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500/50" />
-            <input name="currentPrice" type="number" step="0.01" placeholder="Preço Atual" defaultValue={editData?.currentPrice || 0} className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500/50" />
-            <input name="totalInvested" type="number" step="0.01" placeholder="Total Investido" defaultValue={(editData?.totalInvested || 0)} className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500/50" />
-            <input name="totalRedeemed" type="number" step="0.01" placeholder="Total Resgatado" defaultValue={(editData?.totalRedeemed || 0)} className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500/50" />
-            <input name="totalYield" type="number" step="0.01" placeholder="Rendimento Acum." defaultValue={(editData?.totalYield || 0)} className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500/50" />
-          </div>
-          <button type="submit" className="w-full rounded-xl bg-emerald-500 py-2.5 text-sm font-bold text-white hover:bg-emerald-400">
-            {editData ? 'Atualizar' : 'Adicionar'}
-          </button>
-        </form>
-      )}
+      {showForm && <AddAssetForm accounts={accounts} editData={editData} onSubmit={handleSubmit} />}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <SummaryCard label="Total Investido" value={summary.totalInvested} icon={PiggyBank} color="text-blue-400" bg="bg-blue-500/10" />
@@ -263,6 +258,134 @@ export default function InvestmentPortfolio() {
         )}
       </div>
     </div>
+  )
+}
+
+function AddAssetForm({ accounts, editData, onSubmit }: {
+  accounts: Account[]
+  editData: Investment | null
+  onSubmit: (e: React.FormEvent<HTMLFormElement>) => void
+}) {
+  const [type, setType] = useState(editData?.type || 'treasury')
+  const [qty, setQty] = useState(editData?.quantity || 0)
+  const [avgPrice, setAvgPrice] = useState(editData?.averagePrice || 0)
+  const [curPrice, setCurPrice] = useState(editData?.currentPrice || 0)
+  const [invested, setInvested] = useState(editData?.totalInvested || 0)
+  const [autoCalcInvested, setAutoCalcInvested] = useState(true)
+  const accountOptions = accounts.filter((a) => a.accountType !== 'credit_card')
+
+  const marketValue = qty * curPrice
+  const autoInvested = qty * avgPrice
+
+  function handleQtyChange(v: number) {
+    setQty(v)
+    if (autoCalcInvested) setInvested(v * avgPrice)
+  }
+  function handleAvgPriceChange(v: number) {
+    setAvgPrice(v)
+    if (autoCalcInvested) setInvested(qty * v)
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-5 space-y-5">
+      <div className="flex items-center gap-2 border-b border-zinc-800 pb-3">
+        <Plus className="h-4 w-4 text-emerald-400" />
+        <span className="text-sm font-semibold text-zinc-200">{editData ? 'Editar' : 'Novo'} Ativo</span>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+        <div className="space-y-1.5">
+          <label className="text-xs text-zinc-500">Ticker *</label>
+          <input name="ticker" placeholder="Ex: NTN-B" defaultValue={editData?.ticker || ''} required
+            className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500/50" />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs text-zinc-500">Nome</label>
+          <input name="name" placeholder="Opcional" defaultValue={editData?.name || ''}
+            className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500/50" />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs text-zinc-500">Tipo *</label>
+          <select name="type" value={type} onChange={(e) => setType(e.target.value as InvestmentType)}
+            className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500/50">
+            {Object.entries(INVESTMENT_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+        <div className="space-y-1.5">
+          <label className="text-xs text-zinc-500">Quantidade *</label>
+          <input type="number" step="0.000001" placeholder="Ex: 10" value={qty} required
+            onChange={(e) => handleQtyChange(parseFloat(e.target.value) || 0)}
+            className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500/50" />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs text-zinc-500">Preço Médio (R$)</label>
+          <input type="number" step="0.01" placeholder="Ex: 50,00" value={avgPrice}
+            onChange={(e) => handleAvgPriceChange(parseFloat(e.target.value) || 0)}
+            className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500/50" />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs text-zinc-500">Preço Atual (R$) *</label>
+          <input type="number" step="0.01" placeholder="Ex: 52,00" value={curPrice} required
+            onChange={(e) => setCurPrice(parseFloat(e.target.value) || 0)}
+            className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500/50" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-zinc-500">Total Investido (R$)</label>
+            <button type="button" onClick={() => { setAutoCalcInvested(!autoCalcInvested); if (autoCalcInvested) setInvested(0); else setInvested(autoInvested) }}
+              className={`text-[10px] px-2 py-0.5 rounded-full border ${autoCalcInvested ? 'border-emerald-700 text-emerald-400' : 'border-zinc-700 text-zinc-500'} transition-all`}>
+              {autoCalcInvested ? 'Auto' : 'Manual'}
+            </button>
+          </div>
+          <input name="totalInvested" type="number" step="0.01" placeholder="Auto = qtd × preço médio"
+            value={invested} readOnly={autoCalcInvested}
+            onChange={(e) => { setAutoCalcInvested(false); setInvested(parseFloat(e.target.value) || 0) }}
+            className={`w-full rounded-xl border bg-zinc-900/50 px-4 py-2.5 text-sm outline-none ${autoCalcInvested ? 'border-zinc-700 text-zinc-500' : 'border-zinc-800 text-zinc-100 focus:border-emerald-500/50'}`} />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs text-zinc-500">Total Resgatado (R$)</label>
+          <input name="totalRedeemed" type="number" step="0.01" placeholder="Se houver" defaultValue={editData?.totalRedeemed || 0}
+            className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500/50" />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs text-zinc-500">Rendimento Acum. (R$)</label>
+          <input name="totalYield" type="number" step="0.01" placeholder="Auto se vazio"
+            defaultValue={editData?.totalYield || 0}
+            className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500/50" />
+          <p className="text-[10px] text-zinc-600">Se vazio, calculado: valor mercado + resgate - investido</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-1.5">
+          <label className="text-xs text-zinc-500">Conta *</label>
+          <select name="accountId" defaultValue={editData?.accountId || (accountOptions[0]?.id || 'rico')}
+            className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2.5 text-sm text-zinc-100 outline-none focus:border-emerald-500/50">
+            {accountOptions.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            {accountOptions.length === 0 && <option value="rico">Rico</option>}
+          </select>
+        </div>
+        <div className="space-y-1.5 flex items-end">
+          <div className="w-full rounded-xl border border-zinc-800 bg-zinc-900/30 px-4 py-2.5">
+            <div className="flex justify-between text-xs">
+              <span className="text-zinc-500">Valor Mercado</span>
+              <span className="text-emerald-400 font-semibold">{formatCurrency(marketValue)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button type="submit"
+        className="w-full rounded-xl bg-emerald-500 py-2.5 text-sm font-bold text-white hover:bg-emerald-400 transition-all active:scale-[0.98]">
+        {editData ? 'Atualizar' : 'Adicionar'}
+      </button>
+    </form>
   )
 }
 
