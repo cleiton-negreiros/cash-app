@@ -32,3 +32,4 @@ dist-ssr
 
 # Dados financeiros pessoais (planilhas exportadas)
 *.csv
+.aider*

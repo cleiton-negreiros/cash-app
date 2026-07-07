@@ -1,43 +1,13 @@
 import { useState, useMemo } from 'react'
 import type { Transaction, Account } from '../types'
-import { MONTHS } from '../types'
 import { formatCurrency, formatDate } from '../utils/format'
+import { getInvoicePeriod } from '../utils/invoice'
 import { CreditCard, ChevronLeft, ChevronRight, ArrowDownRight, Send, CheckCircle2 } from 'lucide-react'
 
 interface InvoiceViewProps {
   transactions: Transaction[]
   accounts: Account[]
   onPayInvoice?: (data: Omit<Transaction, 'id'>) => void
-}
-
-function getInvoicePeriod(account: Account, referenceDate: Date) {
-  if (!account.closingDay) return null
-  const year = referenceDate.getFullYear()
-  const month = referenceDate.getMonth()
-  const day = referenceDate.getDate()
-  const closingDay = account.closingDay
-
-  let startMonth: number, startYear: number, endMonth: number, endYear: number
-
-  if (day >= closingDay) {
-    startMonth = month; startYear = year
-    endMonth = month + 1; endYear = year
-  } else {
-    startMonth = month - 1; startYear = month === 0 ? year - 1 : year
-    endMonth = month; endYear = year
-  }
-
-  if (endMonth > 11) { endMonth = 0; endYear++ }
-  if (startMonth < 0) { startMonth = 11; startYear-- }
-
-  return {
-    start: `${startYear}-${String(startMonth + 1).padStart(2, '0')}-${String(closingDay).padStart(2, '0')}`,
-    end: `${endYear}-${String(endMonth + 1).padStart(2, '0')}-${String(closingDay).padStart(2, '0')}`,
-    dueDate: account.dueDay
-      ? `${endYear}-${String(endMonth + 1).padStart(2, '0')}-${String(account.dueDay).padStart(2, '0')}`
-      : null,
-    label: `${MONTHS[endMonth]} ${endYear}`,
-  }
 }
 
 export default function InvoiceView({ transactions, accounts, onPayInvoice }: InvoiceViewProps) {
@@ -51,12 +21,12 @@ export default function InvoiceView({ transactions, accounts, onPayInvoice }: In
 
   const account = accounts.find((a) => a.id === selectedAccount)
   const linkedAccount = account ? accounts.find((a) => a.id === account.linkedAccountId) : null
-  const period = account ? getInvoicePeriod(account, referenceDate) : null
+  const period = account ? getInvoicePeriod(account.closingDay, account.dueDay, referenceDate) : null
 
   const invoiceTransactions = useMemo(() => {
     if (!period || !selectedAccount) return []
     return transactions
-      .filter((t) => t.account === selectedAccount && t.date >= period.start && t.date <= period.end && t.type === 'expense')
+      .filter((t) => t.account === selectedAccount && t.date >= period.start && t.date < period.end && t.type === 'expense')
       .sort((a, b) => a.date.localeCompare(b.date))
   }, [transactions, selectedAccount, period])
 

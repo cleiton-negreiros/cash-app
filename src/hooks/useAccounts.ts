@@ -3,31 +3,7 @@ import { useAuth } from '../contexts/AuthContext'
 import type { Account, Transaction } from '../types'
 import { DEFAULT_ACCOUNTS } from '../types'
 import * as dataService from '../services/dataService'
-
-function getInvoicePeriod(account: Account, date: Date) {
-  if (!account.closingDay) return null
-  const year = date.getFullYear()
-  const month = date.getMonth()
-  const closingDay = account.closingDay
-
-  const currentDate = date.getDate()
-  let startMonth: number, startYear: number, endMonth: number, endYear: number
-
-  if (currentDate >= closingDay) {
-    startMonth = month; startYear = year
-    endMonth = month + 1; endYear = year
-  } else {
-    startMonth = month - 1; startYear = month === 0 ? year - 1 : year
-    endMonth = month; endYear = year
-  }
-
-  if (endMonth > 11) { endMonth = 0; endYear++ }
-  if (startMonth < 0) { startMonth = 11; startYear-- }
-
-  const start = `${startYear}-${String(startMonth + 1).padStart(2, '0')}-${String(closingDay).padStart(2, '0')}`
-  const end = `${endYear}-${String(endMonth + 1).padStart(2, '0')}-${String(closingDay).padStart(2, '0')}`
-  return { start, end }
-}
+import { getInvoicePeriod } from '../utils/invoice'
 
 export function useAccounts(transactions: Transaction[]) {
   const { user } = useAuth()
@@ -49,7 +25,7 @@ export function useAccounts(transactions: Transaction[]) {
 
     const result = accounts.map((account) => {
       if (account.accountType === 'credit_card') {
-        const period = getInvoicePeriod(account, new Date())
+        const period = getInvoicePeriod(account.closingDay, account.dueDay, new Date())
         let total = 0
         if (period) {
           total = transactions
@@ -57,7 +33,7 @@ export function useAccounts(transactions: Transaction[]) {
               t.account === account.id &&
               t.type === 'expense' &&
               t.date >= period.start &&
-              t.date <= period.end
+              t.date < period.end
             )
             .reduce((acc, t) => acc + t.value, 0)
         }
