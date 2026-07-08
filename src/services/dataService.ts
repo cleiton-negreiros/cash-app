@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase'
 import type { Transaction, TransactionType, AccountType } from '../types'
 import { DEFAULT_ACCOUNTS } from '../types'
+import { addPending, getPending } from './syncService'
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2)
@@ -10,7 +11,50 @@ function getStorageKey(userId: string, key: string) {
   return `${key}_${userId}`
 }
 
-// Transactions
+// ── local cache helpers ──
+
+function cacheTransactions(userId: string, transactions: Transaction[]) {
+  localStorage.setItem(getStorageKey(userId, 'transactions'), JSON.stringify(transactions))
+}
+
+function getCachedTransactions(userId: string): Transaction[] {
+  const raw = localStorage.getItem(getStorageKey(userId, 'transactions'))
+  return raw ? JSON.parse(raw) : []
+}
+
+function cacheAccounts(userId: string, accounts: any[]) {
+  localStorage.setItem(getStorageKey(userId, 'accounts'), JSON.stringify(accounts))
+}
+
+function getCachedAccounts(userId: string): any[] {
+  const raw = localStorage.getItem(getStorageKey(userId, 'accounts'))
+  return raw ? JSON.parse(raw) : DEFAULT_ACCOUNTS
+}
+
+// ── apply pending writes on top of server data ──
+
+function applyPending(userId: string, transactions: Transaction[]): Transaction[] {
+  const pending = getPending(userId)
+  let result = [...transactions]
+
+  for (const p of pending) {
+    if (p.table !== 'transactions') continue
+    if (p.op === 'create') {
+      const exists = result.some((t) => t.id === p.data.id)
+      if (!exists) result.unshift(p.data as Transaction)
+    } else if (p.op === 'update') {
+      const idx = result.findIndex((t) => t.id === p.data.id)
+      if (idx !== -1) result[idx] = { ...result[idx], ...p.data }
+    } else if (p.op === 'delete') {
+      result = result.filter((t) => t.id !== p.data.id)
+    }
+  }
+
+  return result
+}
+
+// ── Transactions ──
+
 export async function getTransactions(userId: string): Promise<Transaction[]> {
   try {
     const { data, error } = await supabase
@@ -20,9 +64,11 @@ export async function getTransactions(userId: string): Promise<Transaction[]> {
       .order('date', { ascending: false })
 
     if (error) throw error
-    return data.map(mapTransaction)
+    const server = data.map(mapTransaction)
+    cacheTransactions(userId, server)
+    return applyPending(userId, server)
   } catch {
-    return getLocalTransactions(userId)
+    return applyPending(userId, getCachedTransactions(userId))
   }
 }
 
@@ -30,6 +76,13 @@ export async function saveTransaction(
   userId: string,
   data: Omit<Transaction, 'id'>
 ): Promise<Transaction> {
+  const localId = generateId()
+  const localTx: Transaction = { ...data, id: localId }
+
+  const cached = getCachedTransactions(userId)
+  cached.unshift(localTx)
+  cacheTransactions(userId, cached)
+
   try {
     const insertData: Record<string, any> = {
       user_id: userId,
@@ -55,9 +108,24 @@ export async function saveTransaction(
       .single()
 
     if (error) throw error
-    return mapTransaction(inserted)
+
+    const serverTx = mapTransaction(inserted)
+
+    const updated = getCachedTransactions(userId).map((t) =>
+      t.id === localId ? serverTx : t
+    )
+    cacheTransactions(userId, updated)
+
+    return serverTx
   } catch {
-    return saveLocalTransaction(userId, data)
+    addPending(userId, {
+      id: localId,
+      op: 'create',
+      table: 'transactions',
+      data: localTx,
+      createdAt: Date.now(),
+    })
+    return localTx
   }
 }
 
@@ -66,6 +134,13 @@ export async function updateTransactionData(
   id: string,
   data: Partial<Omit<Transaction, 'id'>>
 ): Promise<void> {
+  const cached = getCachedTransactions(userId)
+  const idx = cached.findIndex((t) => t.id === id)
+  if (idx !== -1) {
+    cached[idx] = { ...cached[idx], ...data }
+    cacheTransactions(userId, cached)
+  }
+
   try {
     const updateData: Record<string, any> = {}
     if (data.account) updateData.account_id = data.account
@@ -90,7 +165,13 @@ export async function updateTransactionData(
 
     if (error) throw error
   } catch {
-    updateLocalTransaction(userId, id, data)
+    addPending(userId, {
+      id,
+      op: 'update',
+      table: 'transactions',
+      data: { id, ...data },
+      createdAt: Date.now(),
+    })
   }
 }
 
@@ -98,6 +179,9 @@ export async function removeTransaction(
   userId: string,
   id: string
 ): Promise<void> {
+  const cached = getCachedTransactions(userId).filter((t) => t.id !== id)
+  cacheTransactions(userId, cached)
+
   try {
     const { error } = await supabase
       .from('transactions')
@@ -107,11 +191,18 @@ export async function removeTransaction(
 
     if (error) throw error
   } catch {
-    deleteLocalTransaction(userId, id)
+    addPending(userId, {
+      id,
+      op: 'delete',
+      table: 'transactions',
+      data: { id },
+      createdAt: Date.now(),
+    })
   }
 }
 
-// Accounts
+// ── Accounts ──
+
 export async function getAccounts(userId: string) {
   try {
     const { data, error } = await supabase
@@ -134,9 +225,10 @@ export async function getAccounts(userId: string) {
         }))
       : DEFAULT_ACCOUNTS
 
+    cacheAccounts(userId, userAccounts)
     return { accounts: userAccounts }
   } catch {
-    return getLocalAccounts(userId)
+    return { accounts: getCachedAccounts(userId) }
   }
 }
 
@@ -204,11 +296,12 @@ export async function updateAccount(
 
     if (error) throw error
   } catch {
-    // silent fail for local
+    // silent fail for accounts
   }
 }
 
-// Map Supabase row to Transaction type
+// ── Helpers ──
+
 function mapTransaction(row: any): Transaction {
   return {
     id: row.id,
@@ -228,40 +321,4 @@ function mapTransaction(row: any): Transaction {
   }
 }
 
-// === LocalStorage fallbacks ===
-
-function getLocalTransactions(userId: string): Transaction[] {
-  const raw = localStorage.getItem(getStorageKey(userId, 'transactions'))
-  return raw ? JSON.parse(raw) : []
-}
-
-function saveLocalTransaction(userId: string, data: Omit<Transaction, 'id'>): Transaction {
-  const transactions = getLocalTransactions(userId)
-  const transaction: Transaction = { ...data, id: generateId() }
-  transactions.unshift(transaction)
-  localStorage.setItem(getStorageKey(userId, 'transactions'), JSON.stringify(transactions))
-  return transaction
-}
-
-function updateLocalTransaction(userId: string, id: string, data: Partial<Omit<Transaction, 'id'>>) {
-  const transactions = getLocalTransactions(userId)
-  const idx = transactions.findIndex((t) => t.id === id)
-  if (idx !== -1) {
-    transactions[idx] = { ...transactions[idx], ...data }
-    localStorage.setItem(getStorageKey(userId, 'transactions'), JSON.stringify(transactions))
-  }
-}
-
-function deleteLocalTransaction(userId: string, id: string) {
-  const transactions = getLocalTransactions(userId)
-  localStorage.setItem(
-    getStorageKey(userId, 'transactions'),
-    JSON.stringify(transactions.filter((t) => t.id !== id))
-  )
-}
-
-function getLocalAccounts(userId: string) {
-  const raw = localStorage.getItem(getStorageKey(userId, 'accounts'))
-  const accounts = raw ? JSON.parse(raw) : DEFAULT_ACCOUNTS
-  return { accounts }
-}
+export { getCachedTransactions, cacheTransactions }

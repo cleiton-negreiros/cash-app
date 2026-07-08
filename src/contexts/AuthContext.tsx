@@ -2,6 +2,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { syncPendingChanges } from '../services/syncService'
 
 interface AuthContextType {
   user: User | null
@@ -26,8 +27,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
 
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
+      const u = session?.user ?? null
+      setUser(u)
       setLoading(false)
+      if (u) {
+        syncPendingChanges(u.id).catch(() => {})
+      }
     })
 
     return () => subscription.unsubscribe()

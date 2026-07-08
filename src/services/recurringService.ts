@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase'
 import type { RecurringTransaction, RecurringFrequency, TransactionType } from '../types'
 import { saveTransaction } from './dataService'
+import { addPending, getPending } from './syncService'
 
 interface RecurringRow {
   id: string
@@ -52,10 +53,31 @@ function setLocal(userId: string, data: RecurringTransaction[]) {
   localStorage.setItem(getKey(userId), JSON.stringify(data))
 }
 
+function applyPending(userId: string, items: RecurringTransaction[]): RecurringTransaction[] {
+  const pending = getPending(userId)
+  let result = [...items]
+
+  for (const p of pending) {
+    if (p.table !== 'recurring_transactions') continue
+    if (p.op === 'create') {
+      const exists = result.some((r) => r.id === p.data.id)
+      if (!exists) result.unshift(p.data as RecurringTransaction)
+    } else if (p.op === 'update') {
+      const idx = result.findIndex((r) => r.id === p.data.id)
+      if (idx !== -1) result[idx] = { ...result[idx], ...p.data }
+    } else if (p.op === 'delete') {
+      result = result.filter((r) => r.id !== p.data.id)
+    }
+  }
+
+  return result
+}
+
 export async function getRecurringTransactions(userId: string) {
   if (userId === 'local') {
     return getLocal(userId)
   }
+
   try {
     const { data, error } = await supabase
       .from('recurring_transactions')
@@ -64,9 +86,12 @@ export async function getRecurringTransactions(userId: string) {
       .order('next_date', { ascending: true })
 
     if (error) throw error
-    return (data as RecurringRow[]).map(mapRow)
+
+    const items = (data as RecurringRow[]).map(mapRow)
+    setLocal(userId, items)
+    return applyPending(userId, items)
   } catch {
-    return getLocal(userId)
+    return applyPending(userId, getLocal(userId))
   }
 }
 
@@ -74,12 +99,18 @@ export async function addRecurringTransaction(
   userId: string,
   data: Omit<RecurringTransaction, 'id'>
 ) {
+  const localId = generateId()
+  const localItem: RecurringTransaction = { ...data, id: localId }
+
   if (userId === 'local') {
     const local = getLocal(userId)
-    const newItem: RecurringTransaction = { ...data, id: generateId() }
-    setLocal(userId, [newItem, ...local])
-    return newItem
+    setLocal(userId, [localItem, ...local])
+    return localItem
   }
+
+  const local = getLocal(userId)
+  setLocal(userId, [localItem, ...local])
+
   try {
     const { data: inserted, error } = await supabase
       .from('recurring_transactions')
@@ -99,12 +130,21 @@ export async function addRecurringTransaction(
       .single()
 
     if (error) throw error
-    return mapRow(inserted as RecurringRow)
+
+    const serverItem = mapRow(inserted as RecurringRow)
+    const cached = getLocal(userId).map((r) => (r.id === localId ? serverItem : r))
+    setLocal(userId, cached)
+
+    return serverItem
   } catch {
-    const local = getLocal(userId)
-    const newItem: RecurringTransaction = { ...data, id: generateId() }
-    setLocal(userId, [newItem, ...local])
-    return newItem
+    addPending(userId, {
+      id: localId,
+      op: 'create',
+      table: 'recurring_transactions',
+      data: localItem,
+      createdAt: Date.now(),
+    })
+    return localItem
   }
 }
 
@@ -122,6 +162,14 @@ export async function updateRecurringTransaction(
     }
     return
   }
+
+  const local = getLocal(userId)
+  const idx = local.findIndex((r) => r.id === id)
+  if (idx !== -1) {
+    local[idx] = { ...local[idx], ...data }
+    setLocal(userId, local)
+  }
+
   try {
     const updateData: Record<string, any> = {}
     if (data.account) updateData.account_id = data.account
@@ -142,12 +190,13 @@ export async function updateRecurringTransaction(
 
     if (error) throw error
   } catch {
-    const local = getLocal(userId)
-    const idx = local.findIndex((r) => r.id === id)
-    if (idx !== -1) {
-      local[idx] = { ...local[idx], ...data }
-      setLocal(userId, local)
-    }
+    addPending(userId, {
+      id,
+      op: 'update',
+      table: 'recurring_transactions',
+      data: { id, ...data },
+      createdAt: Date.now(),
+    })
   }
 }
 
@@ -156,6 +205,9 @@ export async function deleteRecurringTransaction(id: string, userId: string) {
     setLocal(userId, getLocal(userId).filter((r) => r.id !== id))
     return
   }
+
+  setLocal(userId, getLocal(userId).filter((r) => r.id !== id))
+
   try {
     const { error } = await supabase
       .from('recurring_transactions')
@@ -165,7 +217,13 @@ export async function deleteRecurringTransaction(id: string, userId: string) {
 
     if (error) throw error
   } catch {
-    setLocal(userId, getLocal(userId).filter((r) => r.id !== id))
+    addPending(userId, {
+      id,
+      op: 'delete',
+      table: 'recurring_transactions',
+      data: { id },
+      createdAt: Date.now(),
+    })
   }
 }
 
@@ -201,6 +259,7 @@ export async function processRecurringTransactions(userId: string) {
   if (userId === 'local') {
     return processLocal(userId)
   }
+
   try {
     const { data, error } = await supabase
       .from('recurring_transactions')

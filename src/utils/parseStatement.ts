@@ -229,7 +229,7 @@ function parseCSV(content: string): ParsedTransaction[] {
 
     transactions.push({
       description: desc,
-      value: Math.abs(parsedValue),
+      value: Math.abs(parsedValue ?? 0),
       date,
       type,
       category: detectCategory(desc),

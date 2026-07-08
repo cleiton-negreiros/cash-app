@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase'
 import type { Budget } from '../types'
+import { addPending, removePending, getPending } from './syncService'
 
 interface BudgetRow {
   id: string
@@ -61,12 +62,34 @@ function calculateSpent(userId: string, month: number, year: number, type: strin
   }
 }
 
+function applyPending(userId: string, budgets: Budget[]): Budget[] {
+  const pending = getPending(userId)
+  let result = [...budgets]
+
+  for (const p of pending) {
+    if (p.table !== 'budgets') continue
+    if (p.op === 'create') {
+      const exists = result.some((b) => b.id === p.data.id)
+      if (!exists) result.push(p.data as Budget)
+    } else if (p.op === 'update') {
+      const idx = result.findIndex((b) => b.id === p.data.id)
+      if (idx !== -1) result[idx] = { ...result[idx], ...p.data }
+    } else if (p.op === 'delete') {
+      result = result.filter((b) => b.id !== p.data.id)
+    }
+  }
+
+  return result
+}
+
+function applySpent(userId: string, budgets: Budget[], month: number, year: number): Budget[] {
+  return budgets.map((b) => ({ ...b, spent: calculateSpent(userId, month, year, b.type, b.category) }))
+}
+
 export async function getBudgets(userId: string, month: number, year: number) {
   if (userId === 'local') {
     const local = getLocal(userId)
-    return local
-      .filter((b) => b.month === month && b.year === year)
-      .map((b) => ({ ...b, spent: calculateSpent(userId, month, year, b.type, b.category) }))
+    return applySpent(userId, local, month, year)
   }
 
   try {
@@ -80,6 +103,10 @@ export async function getBudgets(userId: string, month: number, year: number) {
     if (error) throw error
 
     const budgets = (data as BudgetRow[]).map(mapRow)
+    setLocal(userId, budgets)
+
+    const pendingMerged = applyPending(userId, budgets)
+    const withSpent = applySpent(userId, pendingMerged, month, year)
 
     const { data: transactions } = await supabase
       .from('transactions')
@@ -96,16 +123,24 @@ export async function getBudgets(userId: string, month: number, year: number) {
         spentByCategory[key] = (spentByCategory[key] || 0) + Number(t.value)
       }
 
-      for (const budget of budgets) {
+      const localTransactions = JSON.parse(localStorage.getItem(`transactions_${userId}`) || '[]') as any[]
+      for (const lt of localTransactions) {
+        const inRange = lt.date >= `${year}-${String(month).padStart(2, '0')}-01` &&
+          lt.date < `${year + (month === 12 ? 1 : 0)}-${String(month === 12 ? 1 : month + 1).padStart(2, '0')}-01`
+        if (inRange && (lt.type === 'expense' || lt.type === 'investment')) {
+          const key = `${lt.type}-${lt.category}`
+          spentByCategory[key] = (spentByCategory[key] || 0) + Number(lt.value)
+        }
+      }
+
+      for (const budget of withSpent) {
         budget.spent = spentByCategory[`${budget.type}-${budget.category}`] || 0
       }
     }
 
-    return budgets
+    return withSpent
   } catch {
-    return getLocal(userId)
-      .filter((b) => b.month === month && b.year === year)
-      .map((b) => ({ ...b, spent: calculateSpent(userId, month, year, b.type, b.category) }))
+    return applySpent(userId, applyPending(userId, getLocal(userId)), month, year)
   }
 }
 
@@ -141,6 +176,27 @@ export async function setBudget(
     return
   }
 
+  const local = getLocal(userId)
+  const existingIdx = local.findIndex((b) => b.category === data.category && b.month === data.month && b.year === data.year)
+  const localId = existingIdx !== -1 ? local[existingIdx].id : generateId()
+
+  const updatedBudget: Budget = {
+    id: localId,
+    category: data.category,
+    type: data.type,
+    limitAmount: data.limitAmount,
+    spent: 0,
+    month: data.month,
+    year: data.year,
+  }
+
+  if (existingIdx !== -1) {
+    local[existingIdx] = { ...local[existingIdx], limitAmount: data.limitAmount }
+  } else {
+    local.push(updatedBudget)
+  }
+  setLocal(userId, local)
+
   try {
     const { data: existing } = await supabase
       .from('budgets')
@@ -159,6 +215,13 @@ export async function setBudget(
         .eq('user_id', userId)
 
       if (error) throw error
+
+      const cached = getLocal(userId)
+      const ci = cached.findIndex((b) => b.id === localId)
+      if (ci !== -1) {
+        cached[ci] = { ...cached[ci], id: existing.id }
+        setLocal(userId, cached)
+      }
     } else {
       const { error } = await supabase
         .from('budgets')
@@ -173,23 +236,16 @@ export async function setBudget(
 
       if (error) throw error
     }
+
+    removePending(userId, localId)
   } catch {
-    const local = getLocal(userId)
-    const idx = local.findIndex((b) => b.category === data.category && b.month === data.month && b.year === data.year)
-    if (idx !== -1) {
-      local[idx] = { ...local[idx], limitAmount: data.limitAmount }
-    } else {
-      local.push({
-        id: generateId(),
-        category: data.category,
-        type: data.type,
-        limitAmount: data.limitAmount,
-        spent: 0,
-        month: data.month,
-        year: data.year,
-      })
-    }
-    setLocal(userId, local)
+    addPending(userId, {
+      id: localId,
+      op: existingIdx !== -1 ? 'update' : 'create',
+      table: 'budgets',
+      data: updatedBudget,
+      createdAt: Date.now(),
+    })
   }
 }
 
@@ -199,6 +255,8 @@ export async function deleteBudget(id: string, userId: string) {
     return
   }
 
+  setLocal(userId, getLocal(userId).filter((b) => b.id !== id))
+
   try {
     const { error } = await supabase
       .from('budgets')
@@ -207,7 +265,15 @@ export async function deleteBudget(id: string, userId: string) {
       .eq('user_id', userId)
 
     if (error) throw error
+
+    removePending(userId, id)
   } catch {
-    setLocal(userId, getLocal(userId).filter((b) => b.id !== id))
+    addPending(userId, {
+      id,
+      op: 'delete',
+      table: 'budgets',
+      data: { id },
+      createdAt: Date.now(),
+    })
   }
 }
