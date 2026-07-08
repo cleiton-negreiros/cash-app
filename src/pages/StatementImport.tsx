@@ -1,19 +1,10 @@
 import { useState, useRef } from 'react'
-import { useAuth } from '../contexts/AuthContext'
 import type { Account } from '../types'
 import { formatCurrency, formatDate } from '../utils/format'
-import { supabase } from '../lib/supabase'
+import { parseStatement, type ParsedTransaction } from '../utils/parseStatement'
 import { Upload, Check, Loader2, ArrowDownRight, TrendingUp } from 'lucide-react'
 
-interface ParsedTransaction {
-  description: string
-  value: number
-  date: string
-  type: string
-}
-
 export default function StatementImport({ accounts, onImport }: { accounts: Account[]; onImport: (txs: any[]) => void }) {
-  const { user } = useAuth()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [loading, setLoading] = useState(false)
   const [parsed, setParsed] = useState<ParsedTransaction[] | null>(null)
@@ -33,28 +24,13 @@ export default function StatementImport({ accounts, onImport }: { accounts: Acco
     const content = await file.text()
 
     try {
-      const { data: sessionData } = await supabase.auth.getSession()
-      const token = sessionData?.session?.access_token || ''
-
-      const res = await fetch('/api/statement/parse', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          content,
-          filename: file.name,
-          accountId: selectedAccount,
-        }),
-      })
-
-      if (!res.ok) throw new Error('Failed to parse')
-
-      const data = await res.json()
-      setParsed(data.transactions || [])
-      setSelectedRows(new Set(data.transactions.map((_: any, i: number) => i)))
-    } catch {
+      console.log('File content preview:', content.slice(0, 200))
+      const result = parseStatement(content, file.name)
+      console.log('Parsed:', result.length, 'transactions, first:', result[0])
+      setParsed(result)
+      setSelectedRows(new Set(result.map((_, i) => i)))
+    } catch (e) {
+      console.error('Parse error:', e)
       alert('Erro ao processar arquivo. Verifique se o formato é suportado (OFX ou CSV).')
     }
 
@@ -77,7 +53,7 @@ export default function StatementImport({ accounts, onImport }: { accounts: Acco
   }
 
   async function handleImport() {
-    if (!parsed || !user) return
+    if (!parsed) return
     setImporting(true)
 
     const selected = parsed.filter((_, i) => selectedRows.has(i))

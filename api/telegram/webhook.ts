@@ -127,9 +127,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             } else {
               await sb.from('telegram_pending_codes').update({ linked: true }).eq('code', cleanCode)
               await sendTelegram(chatId,
-                `✅ *Código verificado!*\n\n` +
-                `Agora acesse o link abaixo para concluir a vinculação:\n\n` +
-                `https://cashapp-gamma-woad.vercel.app/telegram-link\n\n` +
+                `✅ *Código verificado!*\\n\\n` +
+                `Agora acesse o link abaixo para concluir a vinculação:\\n\\n` +
+                `https://cashapp-b6kxzjp0q-cleiton-negreiros-projects.vercel.app/telegram-link\\n\\n` +
                 `Insira o código \`${cleanCode}\` e seu email do CashApp.`
               )
             }

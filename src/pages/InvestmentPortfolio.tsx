@@ -5,7 +5,7 @@ import { INVESTMENT_TYPE_LABELS } from '../types'
 import { fetchInvestments, computePositionSummary, deleteInvestment, upsertInvestment } from '../services/investmentService'
 import { fetchAccounts } from '../services/accountService'
 import { formatCurrency } from '../utils/format'
-import { supabase } from '../lib/supabase'
+import { parseInvestmentOFX } from '../utils/parseInvestmentOFX'
 import { TrendingUp, TrendingDown, PiggyBank, BarChart3, Upload, Loader2, Plus, Trash2, X, Check, FileText, ArrowUpRight, ArrowDownRight } from 'lucide-react'
 
 export default function InvestmentPortfolio() {
@@ -83,16 +83,8 @@ export default function InvestmentPortfolio() {
     setImported(false)
     const content = await file.text()
     try {
-      const { data: sessionData } = await supabase.auth.getSession()
-      const token = sessionData?.session?.access_token || ''
-      const res = await fetch('/api/investment/parse', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ content, filename: file.name }),
-      })
-      if (!res.ok) throw new Error('Falha')
-      const data = await res.json()
-      setImportParsed(data.trades || [])
+      const trades = parseInvestmentOFX(content)
+      setImportParsed(trades)
     } catch { alert('Erro ao processar OFX.') }
     setImporting(false)
   }
