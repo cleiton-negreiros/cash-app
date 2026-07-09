@@ -72,15 +72,23 @@ async function flushPendingCreate(userId: string, p: PendingWrite): Promise<bool
 
     const { data: inserted, error } = await supabase
       .from('transactions')
-      .insert(insertData)
+      .upsert(insertData, {
+        onConflict: 'user_id,account_id,date,description,value,type',
+        ignoreDuplicates: true,
+      })
       .select()
       .single()
 
     if (error) return false
 
     const cached = JSON.parse(localStorage.getItem(`transactions_${userId}`) || '[]')
-    const updated = cached.map((t: any) => (t.id === p.id ? { ...t, id: inserted.id } : t))
-    localStorage.setItem(`transactions_${userId}`, JSON.stringify(updated))
+    if (inserted) {
+      const updated = cached.map((t: any) => (t.id === p.id ? { ...t, id: inserted.id } : t))
+      localStorage.setItem(`transactions_${userId}`, JSON.stringify(updated))
+    } else {
+      const updated = cached.filter((t: any) => t.id !== p.id)
+      localStorage.setItem(`transactions_${userId}`, JSON.stringify(updated))
+    }
     return true
   }
 

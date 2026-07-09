@@ -224,10 +224,17 @@ function AppContent() {
           <StatementImport
             accounts={accounts}
             onImport={async (txs) => {
+              let imported = 0
+              let duplicates = 0
               for (const tx of txs) {
-                await addTransaction(tx)
+                const result = await addTransaction(tx)
+                if (result?.id === '__duplicate__') duplicates++
+                else imported++
               }
-              setToast({ message: `${txs.length} transações importadas!`, type: 'success' })
+              const msg = duplicates > 0
+                ? `${imported} importadas, ${duplicates} duplicatas ignoradas`
+                : `${imported} transações importadas!`
+              setToast({ message: msg, type: duplicates > 0 ? 'warning' : 'success' })
             }}
           />
         )}

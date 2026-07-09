@@ -103,11 +103,20 @@ export async function saveTransaction(
 
     const { data: inserted, error } = await supabase
       .from('transactions')
-      .insert(insertData)
+      .upsert(insertData, {
+        onConflict: 'user_id,account_id,date,description,value,type',
+        ignoreDuplicates: true,
+      })
       .select()
       .single()
 
     if (error) throw error
+
+    if (!inserted) {
+      const cached = getCachedTransactions(userId).filter((t) => t.id !== localId)
+      cacheTransactions(userId, cached)
+      return { ...localTx, id: '__duplicate__' } as Transaction
+    }
 
     const serverTx = mapTransaction(inserted)
 

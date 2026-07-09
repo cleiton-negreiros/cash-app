@@ -20,7 +20,9 @@ export function useTransactions() {
 
   const addTransaction = useCallback(async (data: Omit<Transaction, 'id'>) => {
     const saved = await dataService.saveTransaction(userId, data)
-    setTransactions((prev) => [saved, ...prev])
+    if (saved.id !== '__duplicate__') {
+      setTransactions((prev) => [saved, ...prev])
+    }
     return saved
   }, [userId])
 
